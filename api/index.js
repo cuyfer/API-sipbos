@@ -32,3 +32,6 @@ app.use('/v1/auth', authRoutes);
 app.listen(port, () => {
   console.log(`🚀 Server ready at http://localhost:${port}`);
 });
+
+
+module.exports = app;
