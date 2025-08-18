@@ -5,7 +5,8 @@ const app = express();
 const port = process.env.PORT || 3000;
 const prisma = require("../src/utils/prisma");
 const cors = require("cors");
-const authRoutes = require('../src/route/auth.routes');
+const authRoutes = require("../src/routes/auth.routes");
+const productRoutes = require("../src/routes/product.routes");
 
 // middleware
 app.use(json());
@@ -13,13 +14,17 @@ app.use(urlencoded({ extended: true }));
 app.use(cors());
 // app.options('*', cors());
 
-// Swagger UI
-const swaggerUi = require('swagger-ui-express');
-const openapi = require('../Doc/openapi.json');
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openapi, { swaggerOptions: { validatorUrl: null } }));
-app.get('/openapi.json', (req, res) => {
-  res.json(openapi);
-});
+// // Swagger UI
+// const swaggerUi = require("swagger-ui-express");
+// const openapi = require("../Doc/openapi.json");
+// app.use(
+//   "/api-docs",
+//   swaggerUi.serve,
+//   swaggerUi.setup(openapi, { swaggerOptions: { validatorUrl: null } })
+// );
+// app.get("/openapi.json", (req, res) => {
+//   res.json(openapi);
+// });
 
 // Rute sederhana
 app.get("/", (req, res) => {
@@ -27,11 +32,12 @@ app.get("/", (req, res) => {
 });
 
 // Mount routes
-app.use('/v1/auth', authRoutes);
+// Auth
+app.use("/v1/auth", authRoutes);
 
-app.listen(port, () => {
-  console.log(`🚀 Server ready at http://localhost:${port}`);
-});
+// Product
+app.use("/v1", productRoutes);
 
+app.listen(port, () => {});
 
 module.exports = app;

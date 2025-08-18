@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -13,50 +7,83 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum UserRole {
-  buyer
-  seller
-}
-
 model User {
-  id        String    @id @default(uuid())
-  email     String    @unique
-  password  String?
-  googleId  String?   @unique
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  provider  String?   @default("manually") // manually, google
-  role      UserRole  @default(buyer)
-
-  // Relasi umum
-  profile         Profile?
-  buyerProfile    BuyerProfile?
-  sellerProfile   SellerProfile?
+  id            String         @id @default(uuid())
+  email         String         @unique
+  password      String?
+  googleId      String?        @unique
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  provider      String?        @default("manually")
+  role          UserRole       @default(buyer)
+  buyerProfile  BuyerProfile?
+  profile       Profile?
+  sellerProfile SellerProfile?
 }
 
 model Profile {
-  id     String @id @default(uuid())
-  userId String @unique
+  id     String  @id @default(uuid())
+  userId String  @unique
   name   String?
-  user   User   @relation(fields: [userId], references: [id])
+  user   User    @relation(fields: [userId], references: [id])
 }
 
 model BuyerProfile {
-  id              String @id @default(uuid())
-  userId          String @unique
+  id              String  @id @default(uuid())
+  userId          String  @unique
   phoneNumber     String?
   shippingAddress String?
-  user            User   @relation(fields: [userId], references: [id])
+  user            User    @relation(fields: [userId], references: [id])
 }
 
 model SellerProfile {
-  id              String @id @default(uuid())
-  userId          String @unique
+  id              String          @id @default(uuid())
+  userId          String          @unique
   shopName        String?
   shopDescription String?
   shopAddress     String?
   phoneNumber     String?
-  user            User   @relation(fields: [userId], references: [id])
+  user            User            @relation(fields: [userId], references: [id])
+  products        ProductSeller[]
 }
 
+model Categories {
+  id            String            @id @default(uuid())
+  name          String
+  icon          String
+  color         String
+  image         String
+  product_count Int               @default(0)
+  subcategories Subcategories[]
+  products      ProductSeller[]
+}
 
+model Subcategories {
+  id            String           @id @default(uuid())
+  name          String
+  image         String
+  product_count Int              @default(0)
+  categoryId    String
+  category      Categories       @relation(fields: [categoryId], references: [id])
+  products      ProductSeller[]
+}
+
+model ProductSeller {
+  id              String         @id @default(uuid())
+  name            String
+  image           String?
+  description     String?
+  categoryId      String?
+  category        Categories?    @relation(fields: [categoryId], references: [id])
+  subcategoryId   String?
+  subcategory     Subcategories? @relation(fields: [subcategoryId], references: [id])
+  sellerProfileId String
+  sellerProfile   SellerProfile  @relation(fields: [sellerProfileId], references: [id])
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+enum UserRole {
+  buyer
+  seller
+}

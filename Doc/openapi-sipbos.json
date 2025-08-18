@@ -1,0 +1,61 @@
+{
+    "openapi": "3.0.3",
+    "info": {
+      "title": "Auth API - SIP BOS",
+      "description": "Dokumentasi API autentikasi (Express + Prisma + JWT + Google).",
+      "version": "1.0.0"
+    },
+    "servers": [{ "url": "https://api-sipbos.vercel.app/" }],
+    "paths": {
+      "/": {
+        "get": {
+          "summary": "Health check",
+          "description": "Cek status API, memastikan server aktif dan dapat menerima request.",
+          "x-postman-description": "Gunakan endpoint ini untuk memastikan API berjalan normal."
+        }
+      },
+      "v1/auth/register": {
+        "post": {
+          "summary": "Register manual (Buyer/Pembeli)",
+          "description": "Mendaftarkan user baru sebagai pembeli dengan email & password.",
+          "x-postman-description": "Gunakan endpoint ini untuk membuat akun pembeli secara manual menggunakan email dan password."
+        }
+      },
+      "v1/auth/register/sel": {
+        "post": {
+          "summary": "Register manual (Seller/Penjual)",
+          "description": "Mendaftarkan user baru sebagai penjual dengan email & password.",
+          "x-postman-description": "Gunakan endpoint ini untuk membuat akun penjual secara manual menggunakan email dan password."
+        }
+      },
+      "v1/auth/login": {
+        "post": {
+          "summary": "Login manual",
+          "description": "Login dengan email & password untuk pembeli atau penjual.",
+          "x-postman-description": "Gunakan endpoint ini untuk login ke akun yang sudah terdaftar menggunakan email dan password."
+        }
+      },
+      "v1/auth/me": {
+        "get": {
+          "summary": "Ambil profil user saat ini",
+          "description": "Mengambil data profil user berdasarkan token JWT yang dikirim.",
+          "x-postman-description": "Gunakan endpoint ini untuk mendapatkan data profil user yang sedang login (wajib menyertakan token JWT)."
+        }
+      },
+      "v1/auth/google": {
+        "post": {
+          "summary": "Login Google (Buyer/Pembeli)",
+          "description": "Login pembeli menggunakan Google ID token.",
+          "x-postman-description": "Gunakan endpoint ini untuk login sebagai pembeli menggunakan akun Google (dengan ID token dari Google)."
+        }
+      },
+      "v1/auth/google/sel": {
+        "post": {
+          "summary": "Login Google (Seller/Penjual)",
+          "description": "Login penjual menggunakan Google ID token.",
+          "x-postman-description": "Gunakan endpoint ini untuk login sebagai penjual menggunakan akun Google (dengan ID token dari Google)."
+        }
+      }
+    }
+  }
+  
