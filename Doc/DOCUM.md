@@ -297,3 +297,234 @@ Agar aman dan rapi untuk skala besar:
 - Batasi rate request untuk endpoint auth (opsional).
 - Hindari mengembalikan field sensitif seperti `password` di respons.
 - Pertimbangkan audit log untuk event login, linking, unlinking (skala besar). 
+
+---
+
+## Dokumentasi Produk & Kategori
+
+Semua endpoint di bawah ini berada pada base URL yang sama seperti auth (contoh: `http://localhost:3000`). Header auth menggunakan `Authorization: Bearer <JWT>` jika ditandai (auth required). Role seller dibutuhkan pada sebagian besar endpoint produk milik seller.
+
+### Kategori
+
+#### 1) GET Categories
+- URL: `GET /product/categories`
+- Auth: tidak perlu
+- Respons (200):
+```json
+{
+  "message": "Categories retrieved successfully",
+  "data": [
+    {
+      "id": "uuid",
+      "name": "Minuman",
+      "icon": "...",
+      "color": "#...",
+      "image": "https://...",
+      "product_count": 10,
+      "subcategories": [ { "id": "uuid", "name": "Teh", "image": "...", "product_count": 3, "categoryId": "uuid" } ]
+    }
+  ]
+}
+```
+
+#### 2) POST Category
+- URL: `POST /product/categories/post`
+- Auth: tidak perlu (sesuaikan kebijakan Anda di produksi)
+- Body JSON:
+```json
+{
+  "name": "Minuman",
+  "icon": "mdi-tea",
+  "color": "#00aa88",
+  "image": "https://.../minuman.jpg",
+  "subcategories": [
+    { "name": "Teh", "image": "https://.../teh.jpg" },
+    { "name": "Kopi", "image": "https://.../kopi.jpg" }
+  ]
+}
+```
+- Respons (201):
+```json
+{ "message": "Category created", "data": { "id": "uuid", "name": "Minuman", "subcategories": [ ... ] } }
+```
+
+---
+
+## Produk (Seller)
+
+Model `ProductSeller` (ringkas):
+- Identitas: `name`, `sku` (unik), `description`
+- Harga & promo: `price Decimal(10,2)`, `discountPercent Int(0..100)`
+- Kategori: `categoryId?`, `subcategoryId?` (atau lookup via `categoryName`)
+- Atribut: `weightGram`, `packaging`, `expiresAt`, `storageInstructions`
+- Stock & order: `stock`, `minOrder`, `maxOrder?`
+- Media & meta: `images[]` (juga `image?` untuk kompatibilitas), `flavors[]`, `ingredients[]`, `tags[]`
+- Sosial & rating: `likesCount`, `averageRating`, `ratingCount`
+
+> Catatan: pembuatan/ubah produk mengatur ulang counter kategori/subkategori secara transaksional.
+
+### 1) POST Create Product (versi lengkap)
+- URL: `POST /product`
+- Auth: required (seller)
+- Body JSON (contoh):
+```json
+{
+  "name": "Teh Hijau Premium",
+  "description": "Teh hijau organik",
+  "sku": "THG-001",
+  "price": 25000,
+  "discountPercent": 10,
+  "categoryName": "Minuman",
+  "subcategory":"Snack",
+  "images": ["https://.../1.jpg", "https://.../2.jpg"],
+  "weightGram": 200,
+  "packaging": "pouch",
+  "expiresAt": "2026-01-01T00:00:00.000Z",
+  "storageInstructions": "Simpan di tempat sejuk",
+  "stock": 100,
+  "minOrder": 1,
+  "maxOrder": 10,
+  "flavors": ["Original", "Mint"],
+  "ingredients": ["Daun teh hijau"],
+  "tags": ["teh", "organik"]
+}
+```
+- Validasi penting: `price>=0`, `0<=discountPercent<=100`, `minOrder>=1`, `maxOrder>=minOrder`, `weightGram>=0`. SKU unik.
+- Respons (201): `{ "message": "Product created", "data": { ... } }`
+
+Alternatif kategori:
+- Gunakan `categoryId`/`subcategoryId` langsung atau `categoryName` untuk lookup otomatis (kategori atau subkategori pertama yang cocok).
+
+### 2) PUT Update Product
+- URL: `PUT /product/:id`
+- Auth: required (seller, harus pemilik produk)
+- Body JSON (opsional, field yang diisi akan diupdate):
+```json
+{ "name": "Teh Hijau Ultra", "description": "...", "categoryName": "Teh" }
+```
+- Efek: Jika kategori berubah, counter kategori/subkategori disesuaikan.
+- Respons (200): `{ "message": "Product updated", "data": { ... } }`
+
+### 3) DELETE Product
+- URL: `DELETE /product/:id`
+- Auth: required (seller, harus pemilik produk)
+- Efek: Hapus produk dan perbarui counter kategori/subkategori.
+- Respons (200): `{ "message": "Product deleted" }`
+
+### 4) GET List Products (milik seller login)
+- URL: `GET /get/product/?page=1&pageSize=10&q=teh&categoryId=...&subcategoryId=...`
+- Auth: required (seller)
+- Query:
+  - `page` (default 1), `pageSize` (default 10)
+  - `q` (search pada `name`/`description`)
+  - `categoryId`, `subcategoryId`
+- Respons (200):
+```json
+{
+  "message": "Products retrieved",
+  "data": [ { "id": "uuid", "name": "Teh Hijau Premium", "category": { ... }, "subcategory": { ... } } ],
+  "pagination": { "page": 1, "pageSize": 10, "total": 12, "totalPages": 2 }
+}
+```
+
+### 5) GET Product Detail (milik seller login)
+- URL: `GET /product/:id`
+- Auth: required (seller)
+- Respons (200): `{ "message": "Product detail", "data": { ... } }` (termasuk `category` dan `subcategory`).
+
+---
+
+## Like Produk
+
+Mencatat like dari user pada produk dan menjaga `likesCount` di `ProductSeller` secara transaksional. Idempotent (like/unlike ganda aman).
+
+### 1) Like Product
+- URL: `POST /product/:id/like`
+- Auth: required (user login)
+- Efek: Jika belum like → create `ProductLike` + increment `likesCount`. Jika sudah like → no-op.
+- Respons (200):
+```json
+{ "message": "Liked", "liked": true, "likesCount": 5 }
+```
+
+### 2) Unlike Product
+- URL: `DELETE /product/:id/like`
+- Auth: required (user login)
+- Efek: Jika sudah like → delete `ProductLike` + decrement `likesCount` (tidak kurang dari 0). Jika belum like → no-op.
+- Respons (200):
+```json
+{ "message": "Unliked", "liked": false, "likesCount": 4 }
+```
+
+---
+
+## Produk Publik (Buyer/User)
+
+### 1) GET List Produk Publik
+- URL: `GET /products?page=1&pageSize=12&q=teh&categoryId=...&subcategoryId=...&hasStock=true&sort=createdAt|price|likes|rating&order=asc|desc`
+- Auth: tidak perlu
+- Respons (200):
+```json
+{
+  "message": "Products retrieved",
+  "data": [
+    {
+      "id": "uuid",
+      "name": "Teh Hijau Premium",
+      "price": 25000,
+      "discountPercent": 10,
+      "images": ["https://.../1.jpg"],
+      "image": "https://.../1.jpg",
+      "likesCount": 3,
+      "averageRating": 4.5,
+      "ratingCount": 12,
+      "stock": 100,
+      "category": { "id": "uuid", "name": "Minuman" },
+      "subcategory": { "id": "uuid", "name": "Teh" }
+    }
+  ],
+  "pagination": { "page": 1, "pageSize": 12, "total": 100, "totalPages": 9 }
+}
+```
+
+### 2) GET Detail Produk Publik
+- URL: `GET /products/:id`
+- Auth: tidak perlu
+- Respons (200):
+```json
+{
+  "message": "Product detail",
+  "data": {
+    "id": "uuid",
+    "name": "Teh Hijau Premium",
+    "description": "...",
+    "sku": "THG-001",
+    "price": 25000,
+    "discountPercent": 10,
+    "images": ["https://.../1.jpg", "https://.../2.jpg"],
+    "flavors": ["Original", "Mint"],
+    "ingredients": ["Daun teh hijau"],
+    "tags": ["teh", "organik"],
+    "weightGram": 200,
+    "packaging": "pouch",
+    "expiresAt": "2026-01-01T00:00:00.000Z",
+    "storageInstructions": "Simpan di tempat sejuk",
+    "stock": 100,
+    "minOrder": 1,
+    "maxOrder": 10,
+    "likesCount": 3,
+    "averageRating": 4.5,
+    "ratingCount": 12,
+    "category": { "id": "uuid", "name": "Minuman" },
+    "subcategory": { "id": "uuid", "name": "Teh" }
+  }
+}
+```
+
+---
+
+## Catatan Implementasi
+- Semua operasi tulis kritikal memakai transaksi Prisma (`prisma.$transaction`).
+- Beberapa endpoint memerlukan role seller via middleware `requireSeller` dan auth via `authMiddleware`.
+- `sku` unik di `ProductSeller`; konflik akan mengembalikan 409 di POST create.
+- Counter kategori (`product_count`) dihitung ulang saat create/delete dan saat pindah kategori/subkategori.
