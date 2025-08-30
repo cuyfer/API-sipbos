@@ -2,6 +2,7 @@ const express = require("express");
 const prisma = require("../utils/prisma");
 const { Prisma } = require("@prisma/client");
 const authMiddleware = require("../middlewares/authMiddleware");
+const authMiddlewareGetProductsLikes = require("../middlewares/authMiddlewareGetProductsLikes");
 
 const router = express.Router();
 
@@ -472,7 +473,7 @@ router.delete(
  * GET /products
  * Query: page, pageSize, q, categoryId, subcategoryId, hasStock=true|false, sort=createdAt|price|likes|rating & order=asc|desc
  */
-router.get("/products", async (req, res) => {
+router.get("/products", authMiddlewareGetProductsLikes, async (req, res) => {
   try {
     const page = Number(req.query.page || 1);
     const pageSize = Number(req.query.pageSize || 10);
@@ -514,6 +515,7 @@ router.get("/products", async (req, res) => {
         : {}),
     };
 
+    // 1. Query products
     const [total, items] = await Promise.all([
       prisma.productSeller.count({ where }),
       prisma.productSeller.findMany({
@@ -537,9 +539,29 @@ router.get("/products", async (req, res) => {
       }),
     ]);
 
+    const userId = req.user?.id;
+    // const { userId } = req.body
+    console.log(userId);
+
+    let likedProductIds = [];
+    if (userId) {
+      console.log("jalan euy....");
+      const likes = await prisma.productLike.findMany({
+        where: { userId },
+        select: { productId: true },
+      });
+      likedProductIds = likes.map((l) => l.productId);
+    }
+
+    const itemsWithIsLiked = items.map((item) => ({
+      ...item,
+      isLiked: likedProductIds.includes(item.id),
+    }));
+
+    console.log(itemsWithIsLiked);
     return res.json({
       message: "Products retrieved",
-      data: items,
+      data: itemsWithIsLiked,
       pagination: {
         page,
         pageSize,
