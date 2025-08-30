@@ -5,6 +5,71 @@ const authMiddleware = require("../middlewares/authMiddleware");
 
 const router = express.Router();
 
+// Guard role seller (cek role dari DB)
+async function requireSeller(req, res, next) {
+  try {
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { role: true },
+    });
+    if (!user || user.role !== "seller") {
+      return res
+        .status(403)
+        .json({ message: "Forbidden: seller role required" });
+    }
+    return next();
+  } catch (e) {
+    return res.status(500).json({ message: "Role check error" });
+  }
+}
+
+/**
+ * Helper: find taxonomy by name (category first, then subcategory)
+ * Returns: { type: 'category'|'subcategory', id: string, parentCategoryId?: string }
+ */
+async function findTaxonomyByName(name) {
+  const category = await prisma.categories.findFirst({
+    where: { name: { equals: name, mode: "insensitive" } },
+    select: { id: true },
+  });
+  if (category) return { type: "category", id: category.id };
+
+  const subcategory = await prisma.subcategories.findFirst({
+    where: { name: { equals: name, mode: "insensitive" } },
+    select: { id: true, categoryId: true },
+  });
+  if (subcategory)
+    return {
+      type: "subcategory",
+      id: subcategory.id,
+      parentCategoryId: subcategory.categoryId,
+    };
+
+  return null;
+}
+
+/**
+ * Helper: recompute category.product_count = direct products in category + sum(subcategories.product_count)
+ */
+async function recomputeCategoryCount(tx, categoryId) {
+  const [subAgg, directCount] = await Promise.all([
+    tx.subcategories.aggregate({
+      where: { categoryId },
+      _sum: { product_count: true },
+    }),
+    tx.productSeller.count({ where: { categoryId } }),
+  ]);
+  const subSum = subAgg._sum.product_count || 0;
+  const total = subSum + directCount;
+  await tx.categories.update({
+    where: { id: categoryId },
+    data: { product_count: total },
+  });
+}
+
 /**
  * GET
  * router for categories
@@ -82,71 +147,6 @@ router.post("/product/categories/post", async (req, res) => {
   }
 });
 
-// Guard role seller (cek role dari DB)
-async function requireSeller(req, res, next) {
-  try {
-    if (!req.user || !req.user.id) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
-      select: { role: true },
-    });
-    if (!user || user.role !== "seller") {
-      return res
-        .status(403)
-        .json({ message: "Forbidden: seller role required" });
-    }
-    return next();
-  } catch (e) {
-    return res.status(500).json({ message: "Role check error" });
-  }
-}
-
-/**
- * Helper: find taxonomy by name (category first, then subcategory)
- * Returns: { type: 'category'|'subcategory', id: string, parentCategoryId?: string }
- */
-async function findTaxonomyByName(name) {
-  const category = await prisma.categories.findFirst({
-    where: { name: { equals: name, mode: "insensitive" } },
-    select: { id: true },
-  });
-  if (category) return { type: "category", id: category.id };
-
-  const subcategory = await prisma.subcategories.findFirst({
-    where: { name: { equals: name, mode: "insensitive" } },
-    select: { id: true, categoryId: true },
-  });
-  if (subcategory)
-    return {
-      type: "subcategory",
-      id: subcategory.id,
-      parentCategoryId: subcategory.categoryId,
-    };
-
-  return null;
-}
-
-/**
- * Helper: recompute category.product_count = direct products in category + sum(subcategories.product_count)
- */
-async function recomputeCategoryCount(tx, categoryId) {
-  const [subAgg, directCount] = await Promise.all([
-    tx.subcategories.aggregate({
-      where: { categoryId },
-      _sum: { product_count: true },
-    }),
-    tx.productSeller.count({ where: { categoryId } }),
-  ]);
-  const subSum = subAgg._sum.product_count || 0;
-  const total = subSum + directCount;
-  await tx.categories.update({
-    where: { id: categoryId },
-    data: { product_count: total },
-  });
-}
-
 /**
  * CREATE product by seller
  * Body: { name, image?, description?, categoryName }
@@ -182,30 +182,43 @@ router.post("/product", authMiddleware, requireSeller, async (req, res) => {
       return res.status(400).json({ message: "price must be >= 0" });
     if (discountPercent !== undefined) {
       const d = Number(discountPercent);
-      if (d < 0 || d > 100) return res.status(400).json({ message: "discountPercent must be 0..100" });
+      if (d < 0 || d > 100)
+        return res
+          .status(400)
+          .json({ message: "discountPercent must be 0..100" });
     }
     if (minOrder !== undefined && Number(minOrder) < 1)
       return res.status(400).json({ message: "minOrder must be >= 1" });
-    if (maxOrder !== undefined && minOrder !== undefined && Number(maxOrder) < Number(minOrder))
+    if (
+      maxOrder !== undefined &&
+      minOrder !== undefined &&
+      Number(maxOrder) < Number(minOrder)
+    )
       return res.status(400).json({ message: "maxOrder must be >= minOrder" });
     if (weightGram !== undefined && Number(weightGram) < 0)
       return res.status(400).json({ message: "weightGram must be >= 0" });
 
     if (price !== undefined) {
       const p = Number(price);
-      if (p >= 1e8) return res.status(400).json({ message: "price must be < 100,000,000" });
+      if (p >= 1e8)
+        return res.status(400).json({ message: "price must be < 100,000,000" });
     }
-    
 
-    const seller = await prisma.sellerProfile.findUnique({ where: { userId: req.user.id } });
-    if (!seller) return res.status(403).json({ message: "Seller profile not found" });
+    const seller = await prisma.sellerProfile.findUnique({
+      where: { userId: req.user.id },
+    });
+    if (!seller)
+      return res.status(403).json({ message: "Seller profile not found" });
 
     let resolvedCategoryId = categoryId;
     let resolvedSubcategoryId = subcategoryId;
 
-    if (categoryName && (!resolvedCategoryId && !resolvedSubcategoryId)) {
-    const taxonomy = await findTaxonomyByName(categoryName);
-      if (!taxonomy) return res.status(400).json({ message: "Category/Subcategory not found" });
+    if (categoryName && !resolvedCategoryId && !resolvedSubcategoryId) {
+      const taxonomy = await findTaxonomyByName(categoryName);
+      if (!taxonomy)
+        return res
+          .status(400)
+          .json({ message: "Category/Subcategory not found" });
       if (taxonomy.type === "category") resolvedCategoryId = taxonomy.id;
       else resolvedSubcategoryId = taxonomy.id;
     }
@@ -217,7 +230,8 @@ router.post("/product", authMiddleware, requireSeller, async (req, res) => {
           description,
           sku: sku ?? undefined,
           price: price !== undefined ? new Prisma.Decimal(price) : undefined,
-          discountPercent: discountPercent !== undefined ? Number(discountPercent) : undefined,
+          discountPercent:
+            discountPercent !== undefined ? Number(discountPercent) : undefined,
           categoryId: resolvedCategoryId ?? undefined,
           // subcategoryId: resolvedSubcategoryId ?? undefined ?? subcategory,
           subcategoryId: resolvedSubcategoryId ?? undefined,
@@ -252,8 +266,10 @@ router.post("/product", authMiddleware, requireSeller, async (req, res) => {
 
     return res.status(201).json({ message: "Product created", data: result });
   } catch (err) {
-    if (err?.code === 'P2002') {
-      return res.status(409).json({ message: 'Duplicate unique field (e.g., sku)' });
+    if (err?.code === "P2002") {
+      return res
+        .status(409)
+        .json({ message: "Duplicate unique field (e.g., sku)" });
     }
     console.error("Create product (full) error", err);
     return res.status(500).json({ message: "Server error" });
@@ -267,7 +283,25 @@ router.post("/product", authMiddleware, requireSeller, async (req, res) => {
 router.put("/product/:id", authMiddleware, requireSeller, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, image, description, categoryName } = req.body;
+    const {
+      name,
+      image = [],
+      description,
+      categoryName,
+      sku,
+      price,
+      discountPercent,
+      weightGram,
+      packaging,
+      expiresAt,
+      storageInstructions,
+      stock,
+      minOrder,
+      maxOrder,
+      flavors = [],
+      ingredients = [],
+      tags = [],
+    } = req.body;
 
     // Verify product ownership
     const existing = await prisma.productSeller.findUnique({ where: { id } });
@@ -354,6 +388,19 @@ router.put("/product/:id", authMiddleware, requireSeller, async (req, res) => {
           name: name ?? undefined,
           image: image ?? undefined,
           description: description ?? undefined,
+          sku: sku ?? undefined,
+          price: price ?? undefined,
+          discountPercent: discountPercent ?? undefined,
+          weightGram: weightGram ?? undefined,
+          packaging: packaging ?? undefined,
+          expiresAt: expiresAt ?? undefined,
+          storageInstructions: storageInstructions ?? undefined,
+          stock: stock ?? undefined,
+          minOrder: minOrder ?? undefined,
+          maxOrder: maxOrder ?? undefined,
+          flavors: flavors ?? undefined,
+          ingredients: ingredients ?? undefined,
+          tags: tags ?? undefined,
           categoryId: newTaxonomy
             ? newTaxonomy.type === "category"
               ? newTaxonomy.id
@@ -425,31 +472,46 @@ router.delete(
  * GET /products
  * Query: page, pageSize, q, categoryId, subcategoryId, hasStock=true|false, sort=createdAt|price|likes|rating & order=asc|desc
  */
-router.get('/products', async (req, res) => {
+router.get("/products", async (req, res) => {
   try {
     const page = Number(req.query.page || 1);
     const pageSize = Number(req.query.pageSize || 10);
-    const q = (req.query.q || '').toString().trim();
-    const categoryId = req.query.categoryId ? req.query.categoryId.toString() : undefined;
-    const subcategoryId = req.query.subcategoryId ? req.query.subcategoryId.toString() : undefined;
-    const hasStock = req.query.hasStock ? req.query.hasStock.toString() === 'true' : undefined;
-    const sort = (req.query.sort || 'createdAt').toString();
-    const order = (req.query.order || 'desc').toString();
+    const q = (req.query.q || "").toString().trim();
+    const categoryId = req.query.categoryId
+      ? req.query.categoryId.toString()
+      : undefined;
+    const subcategoryId = req.query.subcategoryId
+      ? req.query.subcategoryId.toString()
+      : undefined;
+    const hasStock = req.query.hasStock
+      ? req.query.hasStock.toString() === "true"
+      : undefined;
+    const sort = (req.query.sort || "createdAt").toString();
+    const order = (req.query.order || "desc").toString();
 
     const sortMap = {
-      createdAt: 'createdAt',
-      price: 'price',
-      likes: 'likesCount',
-      rating: 'averageRating',
+      createdAt: "createdAt",
+      price: "price",
+      likes: "likesCount",
+      rating: "averageRating",
     };
-    const orderByField = sortMap[sort] || 'createdAt';
-    const orderByDir = order === 'asc' ? 'asc' : 'desc';
+    const orderByField = sortMap[sort] || "createdAt";
+    const orderByDir = order === "asc" ? "asc" : "desc";
 
     const where = {
-      ...(q ? { OR: [ { name: { contains: q, mode: 'insensitive' } }, { description: { contains: q, mode: 'insensitive' } } ] } : {}),
+      ...(q
+        ? {
+            OR: [
+              { name: { contains: q, mode: "insensitive" } },
+              { description: { contains: q, mode: "insensitive" } },
+            ],
+          }
+        : {}),
       ...(categoryId ? { categoryId } : {}),
       ...(subcategoryId ? { subcategoryId } : {}),
-      ...(hasStock !== undefined ? { stock: hasStock ? { gt: 0 } : undefined } : {}),
+      ...(hasStock !== undefined
+        ? { stock: hasStock ? { gt: 0 } : undefined }
+        : {}),
     };
 
     const [total, items] = await Promise.all([
@@ -476,13 +538,18 @@ router.get('/products', async (req, res) => {
     ]);
 
     return res.json({
-      message: 'Products retrieved',
+      message: "Products retrieved",
       data: items,
-      pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.ceil(total / pageSize),
+      },
     });
   } catch (err) {
-    console.error('Public list products error', err);
-    return res.status(500).json({ message: 'Server error' });
+    console.error("Public list products error", err);
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
@@ -490,7 +557,7 @@ router.get('/products', async (req, res) => {
  * PUBLIC: Get product detail for users
  * GET /products/:id
  */
-router.get('/products/:id', async (req, res) => {
+router.get("/products/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const product = await prisma.productSeller.findUnique({
@@ -519,32 +586,15 @@ router.get('/products/:id', async (req, res) => {
         category: true,
         subcategory: true,
         createdAt: true,
-      }
+      },
     });
-    if (!product) return res.status(404).json({ message: 'Product not found' });
-    return res.json({ message: 'Product detail', data: product });
+    if (!product) return res.status(404).json({ message: "Product not found" });
+    return res.json({ message: "Product detail", data: product });
   } catch (err) {
-    console.error('Public product detail error', err);
-    return res.status(500).json({ message: 'Server error' });
+    console.error("Public product detail error", err);
+    return res.status(500).json({ message: "Server error" });
   }
 });
-/**
- * Upload Product
- * POST
- * responses = {}
- *
- */
-router.post(
-  "/upload/product",
-  authMiddleware,
-  requireSeller,
-  async (req, res) => {
-    const { name, image, description, sellerProfileId, sellerProfile } = req.body
-   
-
-  }
-);
-
 
 /**
  * GET Products
@@ -552,20 +602,34 @@ router.post(
  * responses = {}
  */
 
-router.get('/get/product/', authMiddleware, requireSeller, async (req, res)=>{
+router.get("/get/product/", authMiddleware, requireSeller, async (req, res) => {
   try {
     const page = Number(req.query.page || 1);
     const pageSize = Number(req.query.pageSize || 10);
-    const q = (req.query.q || '').toString().trim();
-    const categoryId = req.query.categoryId ? req.query.categoryId.toString() : undefined;
-    const subcategoryId = req.query.subcategoryId ? req.query.subcategoryId.toString() : undefined;
+    const q = (req.query.q || "").toString().trim();
+    const categoryId = req.query.categoryId
+      ? req.query.categoryId.toString()
+      : undefined;
+    const subcategoryId = req.query.subcategoryId
+      ? req.query.subcategoryId.toString()
+      : undefined;
 
-    const seller = await prisma.sellerProfile.findUnique({ where: { userId: req.user.id } });
-    if (!seller) return res.status(403).json({ message: 'Seller profile not found' });
+    const seller = await prisma.sellerProfile.findUnique({
+      where: { userId: req.user.id },
+    });
+    if (!seller)
+      return res.status(403).json({ message: "Seller profile not found" });
 
     const where = {
       sellerProfileId: seller.id,
-      ...(q ? { OR: [ { name: { contains: q, mode: 'insensitive' } }, { description: { contains: q, mode: 'insensitive' } } ] } : {}),
+      ...(q
+        ? {
+            OR: [
+              { name: { contains: q, mode: "insensitive" } },
+              { description: { contains: q, mode: "insensitive" } },
+            ],
+          }
+        : {}),
       ...(categoryId ? { categoryId } : {}),
       ...(subcategoryId ? { subcategoryId } : {}),
     };
@@ -574,7 +638,7 @@ router.get('/get/product/', authMiddleware, requireSeller, async (req, res)=>{
       prisma.productSeller.count({ where }),
       prisma.productSeller.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
         skip: (page - 1) * pageSize,
         take: pageSize,
         include: {
@@ -585,33 +649,41 @@ router.get('/get/product/', authMiddleware, requireSeller, async (req, res)=>{
     ]);
 
     return res.json({
-      message: 'Products retrieved',
+      message: "Products retrieved",
       data: items,
-      pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.ceil(total / pageSize),
+      },
     });
   } catch (err) {
-    console.error('List products error', err);
-    return res.status(500).json({ message: 'Server error' });
+    console.error("List products error", err);
+    return res.status(500).json({ message: "Server error" });
   }
-})
+});
 
 // GET product detail by id (scoped to current seller)
-router.get('/product/:id', authMiddleware, requireSeller, async (req, res) => {
+router.get("/product/:id", authMiddleware, requireSeller, async (req, res) => {
   try {
     const { id } = req.params;
-    const seller = await prisma.sellerProfile.findUnique({ where: { userId: req.user.id } });
-    if (!seller) return res.status(403).json({ message: 'Seller profile not found' });
+    const seller = await prisma.sellerProfile.findUnique({
+      where: { userId: req.user.id },
+    });
+    if (!seller)
+      return res.status(403).json({ message: "Seller profile not found" });
 
     const product = await prisma.productSeller.findFirst({
       where: { id, sellerProfileId: seller.id },
       include: { category: true, subcategory: true },
     });
-    if (!product) return res.status(404).json({ message: 'Product not found' });
+    if (!product) return res.status(404).json({ message: "Product not found" });
 
-    return res.json({ message: 'Product detail', data: product });
+    return res.json({ message: "Product detail", data: product });
   } catch (err) {
-    console.error('Get product detail error', err);
-    return res.status(500).json({ message: 'Server error' });
+    console.error("Get product detail error", err);
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
@@ -620,17 +692,39 @@ router.get('/product/:id', authMiddleware, requireSeller, async (req, res) => {
  * get
  * responses = {}
  */
-router.get('/get/favorit/products', async (req, res)=>{
-  
-})
-/**
- * Get produk UMKM terpilih
- * get
- * responses = {}
- */
-router.get('/get/favorit/products', async (req, res)=>{
+router.get("/get/preferred/products", async (req, res) => {
+  try {
+    // ambil query param "take"
+    const number = parseInt(req.query.take);
 
-})
+    const products = await prisma.productSeller.findMany({
+      orderBy: {
+        likesCount: "desc",
+      },
+      take: isNaN(number) ? undefined : number, // kalau ada number → ambil segitu, kalau nggak ada → semua
+    });
+
+    if (products.length === 0) {
+      return res.status(404).json({
+        message: "Most liked products not found!",
+        data: [],
+      });
+    }
+
+    return res.status(200).json({
+      message: isNaN(number)
+        ? "List of most liked products"
+        : `List ${number} of most liked products`,
+      data: products,
+    });
+  } catch (error) {
+    console.error("Unexpected Error:", error);
+    return res.status(500).json({
+      message: "Unexpected Error",
+      data: null,
+    });
+  }
+});
 
 /**
  * LIKE product (idempotent)
@@ -656,7 +750,10 @@ router.post("/product/:id/like", authMiddleware, async (req, res) => {
             where: { id },
             select: { likesCount: true },
           });
-          return { liked: true, likesCount: fresh?.likesCount ?? product.likesCount };
+          return {
+            liked: true,
+            likesCount: fresh?.likesCount ?? product.likesCount,
+          };
         }
 
         await tx.productLike.create({ data: { userId, productId: id } });
@@ -673,7 +770,11 @@ router.post("/product/:id/like", authMiddleware, async (req, res) => {
         where: { id },
         select: { likesCount: true },
       });
-      return res.status(200).json({ message: "Liked", liked: true, likesCount: fresh?.likesCount ?? product.likesCount });
+      return res.status(200).json({
+        message: "Liked",
+        liked: true,
+        likesCount: fresh?.likesCount ?? product.likesCount,
+      });
     }
   } catch (err) {
     console.error("Like product error", err);
@@ -704,7 +805,10 @@ router.delete("/product/:id/like", authMiddleware, async (req, res) => {
           where: { id },
           select: { likesCount: true },
         });
-        return { liked: false, likesCount: fresh?.likesCount ?? product.likesCount };
+        return {
+          liked: false,
+          likesCount: fresh?.likesCount ?? product.likesCount,
+        };
       }
 
       await tx.productLike.delete({ where: { id: existing.id } });

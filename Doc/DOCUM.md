@@ -3,6 +3,7 @@
 Dokumen ini menjelaskan cara memakai API autentikasi pada backend ini, mulai dari register, login manual, ambil profil (`/auth/me`), hingga login dengan Google (mobile flow / Flutter), beserta contoh penggunaan di Web dan Flutter.
 
 ### Persiapan
+
 - Stack: Node.js + Express + Prisma (PostgreSQL) + jsonwebtoken + google-auth-library
 - File penting:
   - `index.js` (mount route `/auth`)
@@ -12,7 +13,9 @@ Dokumen ini menjelaskan cara memakai API autentikasi pada backend ini, mulai dar
   - `prisma/schema.prisma` (skema User, Profile)
 
 ### Environment variables (.env)
+
 Tambahkan contoh variabel berikut di file `.env` root:
+
 ```
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DBNAME?schema=public
 JWT_SECRET=your-very-strong-secret
@@ -21,6 +24,7 @@ PORT=3000
 ```
 
 Jalankan server:
+
 ```
 npm run dev
 ```
@@ -33,6 +37,7 @@ Semua route auth di-mount di prefix `/auth`.
 ## Endpoint
 
 ### 1) Register Manual
+
 - URL: `POST /auth/register`
 - Body JSON:
   ```json
@@ -50,7 +55,13 @@ Semua route auth di-mount di prefix `/auth`.
     "user": {
       "id": "uuid",
       "email": "user@example.com",
-      "profile": { "id": "uuid", "userId": "uuid", "name": "Nama Opsional", "phone": null, "address": null }
+      "profile": {
+        "id": "uuid",
+        "userId": "uuid",
+        "name": "Nama Opsional",
+        "phone": null,
+        "address": null
+      }
     }
   }
   ```
@@ -62,16 +73,21 @@ Semua route auth di-mount di prefix `/auth`.
   ```
 - Contoh Web (fetch):
   ```js
-  const res = await fetch('http://localhost:3000/auth/register', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: 'User', email: 'user@example.com', password: 'secret' })
+  const res = await fetch("http://localhost:3000/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: "User",
+      email: "user@example.com",
+      password: "secret",
+    }),
   });
   const data = await res.json();
-  localStorage.setItem('token', data.token);
+  localStorage.setItem("token", data.token);
   ```
 
 ### 2) Login Manual
+
 - URL: `POST /auth/login`
 - Body JSON:
   ```json
@@ -86,16 +102,17 @@ Semua route auth di-mount di prefix `/auth`.
   ```
 - Contoh Web (fetch):
   ```js
-  const res = await fetch('http://localhost:3000/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: 'user@example.com', password: 'secret' })
+  const res = await fetch("http://localhost:3000/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "user@example.com", password: "secret" }),
   });
   const data = await res.json();
-  localStorage.setItem('token', data.token);
+  localStorage.setItem("token", data.token);
   ```
 
 ### 3) Ambil Profil (Me)
+
 - URL: `GET /auth/me`
 - Header: `Authorization: Bearer <token>`
 - Respons sukses (200):
@@ -109,14 +126,15 @@ Semua route auth di-mount di prefix `/auth`.
   ```
 - Contoh Web (fetch):
   ```js
-  const token = localStorage.getItem('token');
-  const res = await fetch('http://localhost:3000/auth/me', {
-    headers: { Authorization: `Bearer ${token}` }
+  const token = localStorage.getItem("token");
+  const res = await fetch("http://localhost:3000/auth/me", {
+    headers: { Authorization: `Bearer ${token}` },
   });
   const data = await res.json();
   ```
 
 ### 4) Login dengan Google (Mobile Flow / Flutter)
+
 - Flow: Frontend (Flutter) mengambil Google ID token, lalu kirim ke backend.
 - URL: `POST /auth/google`
 - Body JSON:
@@ -124,13 +142,14 @@ Semua route auth di-mount di prefix `/auth`.
   { "token": "<idToken-dari-Google>" }
   ```
 - Backend akan:
-  1) Verifikasi ID token ke Google (audience = `GOOGLE_CLIENT_ID`)
-  2) Ambil payload: `sub` (googleId), `email`, `name`, `picture`
-  3) Cari user by `googleId` atau `email`
-  4) Jika belum ada → create user (provider="google") + profile
-  5) Jika ada by email tapi belum terhubung Google (dan provider manual) → sesuai kebijakan profesional, JANGAN auto-link (lihat bagian Linking Akun)
-  6) Generate JWT (`{ id, email, provider }`, expired contoh `7d`)
-  7) Kembalikan `{ message, token, user }`
+
+  1. Verifikasi ID token ke Google (audience = `GOOGLE_CLIENT_ID`)
+  2. Ambil payload: `sub` (googleId), `email`, `name`, `picture`
+  3. Cari user by `googleId` atau `email`
+  4. Jika belum ada → create user (provider="google") + profile
+  5. Jika ada by email tapi belum terhubung Google (dan provider manual) → sesuai kebijakan profesional, JANGAN auto-link (lihat bagian Linking Akun)
+  6. Generate JWT (`{ id, email, provider }`, expired contoh `7d`)
+  7. Kembalikan `{ message, token, user }`
 
 - Contoh cURL:
   ```bash
@@ -140,47 +159,54 @@ Semua route auth di-mount di prefix `/auth`.
   ```
 
 #### Cara mendapatkan ID Token (untuk tes cepat)
+
 - OAuth Playground: `https://developers.google.com/oauthplayground/`
-  1) Klik Options (ikon gear) → centang "Use your own OAuth credentials" → isi Web Client ID & Secret
-  2) Pastikan redirect URI `https://developers.google.com/oauthplayground` sudah ditambahkan di OAuth Client (Google Cloud)
-  3) Step 1: input scopes `openid email profile` → Authorize
-  4) Step 2: Exchange → salin "ID token"
+  1. Klik Options (ikon gear) → centang "Use your own OAuth credentials" → isi Web Client ID & Secret
+  2. Pastikan redirect URI `https://developers.google.com/oauthplayground` sudah ditambahkan di OAuth Client (Google Cloud)
+  3. Step 1: input scopes `openid email profile` → Authorize
+  4. Step 2: Exchange → salin "ID token"
 
 ---
 
 ## Contoh Penggunaan di Web
 
 ### Register & Login (fetch)
+
 ```js
 // Register
-await fetch('http://localhost:3000/auth/register', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ name: 'User', email: 'user@example.com', password: 'secret' })
+await fetch("http://localhost:3000/auth/register", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    name: "User",
+    email: "user@example.com",
+    password: "secret",
+  }),
 });
 
 // Login
-const loginRes = await fetch('http://localhost:3000/auth/login', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ email: 'user@example.com', password: 'secret' })
+const loginRes = await fetch("http://localhost:3000/auth/login", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ email: "user@example.com", password: "secret" }),
 });
 const loginData = await loginRes.json();
-localStorage.setItem('token', loginData.token);
+localStorage.setItem("token", loginData.token);
 
 // Ambil profil
-const meRes = await fetch('http://localhost:3000/auth/me', {
-  headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+const meRes = await fetch("http://localhost:3000/auth/me", {
+  headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
 });
 const me = await meRes.json();
 ```
 
 ### Login Google (Web fetch, ID token dari Playground)
+
 ```js
-await fetch('http://localhost:3000/auth/google', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ token: '<ID_TOKEN>' })
+await fetch("http://localhost:3000/auth/google", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ token: "<ID_TOKEN>" }),
 });
 ```
 
@@ -189,6 +215,7 @@ await fetch('http://localhost:3000/auth/google', {
 ## Contoh Penggunaan di Flutter
 
 ### Register & Login biasa (http)
+
 ```dart
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -231,6 +258,7 @@ Future<void> me(String token) async {
 ```
 
 ### Login dengan Google (google_sign_in)
+
 ```dart
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
@@ -256,13 +284,16 @@ Future<void> loginWithGoogle() async {
 ```
 
 Catatan:
+
 - Android emulator gunakan `10.0.2.2`; iOS simulator boleh `localhost`.
 - `serverClientId` wajib diisi dengan Web Client ID yang sama dengan `GOOGLE_CLIENT_ID` backend.
 
 ---
 
 ## Kebijakan Profesional: Linking Akun Google (Opsional Tambahan)
+
 Agar aman dan rapi untuk skala besar:
+
 - `email` tetap unik pada tabel `User`.
 - Ketika login Google (`/auth/google`):
   - Jika ditemukan user by `email` dengan `provider = "manual"` dan `googleId` masih kosong → JANGAN auto-link. Kembalikan error:
@@ -281,6 +312,7 @@ Agar aman dan rapi untuk skala besar:
 ---
 
 ## Troubleshooting
+
 - 401 Invalid Google token:
   - `aud` pada ID token tidak sama dengan `GOOGLE_CLIENT_ID` backend, atau token expired.
 - "Akses diblokir: Permintaan aplikasi ini tidak valid" saat di OAuth Playground:
@@ -293,10 +325,11 @@ Agar aman dan rapi untuk skala besar:
 ---
 
 ## Catatan Keamanan
+
 - Simpan `JWT_SECRET` dan kredensial Google hanya di `.env`.
 - Batasi rate request untuk endpoint auth (opsional).
 - Hindari mengembalikan field sensitif seperti `password` di respons.
-- Pertimbangkan audit log untuk event login, linking, unlinking (skala besar). 
+- Pertimbangkan audit log untuk event login, linking, unlinking (skala besar).
 
 ---
 
@@ -307,9 +340,11 @@ Semua endpoint di bawah ini berada pada base URL yang sama seperti auth (contoh:
 ### Kategori
 
 #### 1) GET Categories
+
 - URL: `GET /product/categories`
 - Auth: tidak perlu
 - Respons (200):
+
 ```json
 {
   "message": "Categories retrieved successfully",
@@ -321,16 +356,26 @@ Semua endpoint di bawah ini berada pada base URL yang sama seperti auth (contoh:
       "color": "#...",
       "image": "https://...",
       "product_count": 10,
-      "subcategories": [ { "id": "uuid", "name": "Teh", "image": "...", "product_count": 3, "categoryId": "uuid" } ]
+      "subcategories": [
+        {
+          "id": "uuid",
+          "name": "Teh",
+          "image": "...",
+          "product_count": 3,
+          "categoryId": "uuid"
+        }
+      ]
     }
   ]
 }
 ```
 
 #### 2) POST Category
+
 - URL: `POST /product/categories/post`
 - Auth: tidak perlu (sesuaikan kebijakan Anda di produksi)
 - Body JSON:
+
 ```json
 {
   "name": "Minuman",
@@ -343,7 +388,9 @@ Semua endpoint di bawah ini berada pada base URL yang sama seperti auth (contoh:
   ]
 }
 ```
+
 - Respons (201):
+
 ```json
 { "message": "Category created", "data": { "id": "uuid", "name": "Minuman", "subcategories": [ ... ] } }
 ```
@@ -353,6 +400,7 @@ Semua endpoint di bawah ini berada pada base URL yang sama seperti auth (contoh:
 ## Produk (Seller)
 
 Model `ProductSeller` (ringkas):
+
 - Identitas: `name`, `sku` (unik), `description`
 - Harga & promo: `price Decimal(10,2)`, `discountPercent Int(0..100)`
 - Kategori: `categoryId?`, `subcategoryId?` (atau lookup via `categoryName`)
@@ -364,9 +412,11 @@ Model `ProductSeller` (ringkas):
 > Catatan: pembuatan/ubah produk mengatur ulang counter kategori/subkategori secara transaksional.
 
 ### 1) POST Create Product (versi lengkap)
+
 - URL: `POST /product`
 - Auth: required (seller)
 - Body JSON (contoh):
+
 ```json
 {
   "name": "Teh Hijau Premium",
@@ -375,7 +425,7 @@ Model `ProductSeller` (ringkas):
   "price": 25000,
   "discountPercent": 10,
   "categoryName": "Minuman",
-  "subcategory":"Snack",
+  "subcategory": "Snack",
   "images": ["https://.../1.jpg", "https://.../2.jpg"],
   "weightGram": 200,
   "packaging": "pouch",
@@ -389,29 +439,55 @@ Model `ProductSeller` (ringkas):
   "tags": ["teh", "organik"]
 }
 ```
+
 - Validasi penting: `price>=0`, `0<=discountPercent<=100`, `minOrder>=1`, `maxOrder>=minOrder`, `weightGram>=0`. SKU unik.
 - Respons (201): `{ "message": "Product created", "data": { ... } }`
 
 Alternatif kategori:
+
 - Gunakan `categoryId`/`subcategoryId` langsung atau `categoryName` untuk lookup otomatis (kategori atau subkategori pertama yang cocok).
 
 ### 2) PUT Update Product
+
 - URL: `PUT /product/:id`
 - Auth: required (seller, harus pemilik produk)
 - Body JSON (opsional, field yang diisi akan diupdate):
+
 ```json
-{ "name": "Teh Hijau Ultra", "description": "...", "categoryName": "Teh" }
+{
+  "name": "Teh Hijau Premium",
+  "description": "Teh hijau organik",
+  "sku": "THG-001",
+  "price": 25000,
+  "discountPercent": 10,
+  "categoryName": "Minuman",
+  "subcategory": "Snack",
+  "images": ["https://.../1.jpg", "https://.../2.jpg"],
+  "weightGram": 200,
+  "packaging": "pouch",
+  "expiresAt": "2026-01-01T00:00:00.000Z",
+  "storageInstructions": "Simpan di tempat sejuk",
+  "stock": 100,
+  "minOrder": 1,
+  "maxOrder": 10,
+  "flavors": ["Original", "Mint"],
+  "ingredients": ["Daun teh hijau"],
+  "tags": ["teh", "organik"]
+}
 ```
+
 - Efek: Jika kategori berubah, counter kategori/subkategori disesuaikan.
 - Respons (200): `{ "message": "Product updated", "data": { ... } }`
 
 ### 3) DELETE Product
+
 - URL: `DELETE /product/:id`
 - Auth: required (seller, harus pemilik produk)
 - Efek: Hapus produk dan perbarui counter kategori/subkategori.
 - Respons (200): `{ "message": "Product deleted" }`
 
 ### 4) GET List Products (milik seller login)
+
 - URL: `GET /get/product/?page=1&pageSize=10&q=teh&categoryId=...&subcategoryId=...`
 - Auth: required (seller)
 - Query:
@@ -419,6 +495,7 @@ Alternatif kategori:
   - `q` (search pada `name`/`description`)
   - `categoryId`, `subcategoryId`
 - Respons (200):
+
 ```json
 {
   "message": "Products retrieved",
@@ -428,6 +505,7 @@ Alternatif kategori:
 ```
 
 ### 5) GET Product Detail (milik seller login)
+
 - URL: `GET /product/:id`
 - Auth: required (seller)
 - Respons (200): `{ "message": "Product detail", "data": { ... } }` (termasuk `category` dan `subcategory`).
@@ -439,19 +517,23 @@ Alternatif kategori:
 Mencatat like dari user pada produk dan menjaga `likesCount` di `ProductSeller` secara transaksional. Idempotent (like/unlike ganda aman).
 
 ### 1) Like Product
+
 - URL: `POST /product/:id/like`
 - Auth: required (user login)
 - Efek: Jika belum like → create `ProductLike` + increment `likesCount`. Jika sudah like → no-op.
 - Respons (200):
+
 ```json
 { "message": "Liked", "liked": true, "likesCount": 5 }
 ```
 
 ### 2) Unlike Product
+
 - URL: `DELETE /product/:id/like`
 - Auth: required (user login)
 - Efek: Jika sudah like → delete `ProductLike` + decrement `likesCount` (tidak kurang dari 0). Jika belum like → no-op.
 - Respons (200):
+
 ```json
 { "message": "Unliked", "liked": false, "likesCount": 4 }
 ```
@@ -461,9 +543,11 @@ Mencatat like dari user pada produk dan menjaga `likesCount` di `ProductSeller` 
 ## Produk Publik (Buyer/User)
 
 ### 1) GET List Produk Publik
+
 - URL: `GET /products?page=1&pageSize=12&q=teh&categoryId=...&subcategoryId=...&hasStock=true&sort=createdAt|price|likes|rating&order=asc|desc`
 - Auth: tidak perlu
 - Respons (200):
+
 ```json
 {
   "message": "Products retrieved",
@@ -488,9 +572,11 @@ Mencatat like dari user pada produk dan menjaga `likesCount` di `ProductSeller` 
 ```
 
 ### 2) GET Detail Produk Publik
+
 - URL: `GET /products/:id`
 - Auth: tidak perlu
 - Respons (200):
+
 ```json
 {
   "message": "Product detail",
@@ -521,9 +607,101 @@ Mencatat like dari user pada produk dan menjaga `likesCount` di `ProductSeller` 
 }
 ```
 
+## 3) GET List Liked Product(Buyer/Seller)
+
+- URL: `GET /v1/get/preferred/products/:number
+- Auth: tidak perlu
+- Respons (200)
+
+```json
+{
+    "message": "List of most liked products",
+    "data": [
+        {
+            "id": "39c18a90-1ba1-4b04-9285-76c50d3e73f1",
+            "name": "Teh merah mantap banget",
+            "description": "Teh hijau organik",
+            "sku": "THG-20",
+            "price": "25000",
+            "discountPercent": 10,
+            "categoryId": "d257e74d-4f04-419c-af0d-69d54aebd07c",
+            "subcategoryId": null,
+            "sellerProfileId": "c1a79feb-41d8-429b-8ad8-96029aeea05a",
+            "weightGram": 200,
+            "packaging": "pouch",
+            "expiresAt": "2026-01-01T00:00:00.000Z",
+            "storageInstructions": "Simpan di tempat sejuk",
+            "stock": 100,
+            "minOrder": 1,
+            "maxOrder": 10,
+            "images": [
+                "https://.../1.jpg",
+                "https://.../2.jpg"
+            ],
+            "flavors": [
+                "Original",
+                "Mint"
+            ],
+            "ingredients": [
+                "Daun teh hijau"
+            ],
+            "tags": [
+                "teh",
+                "organik"
+            ],
+            "likesCount": 100,
+            "averageRating": 0,
+            "ratingCount": 0,
+            "createdAt": "2025-08-30T05:26:52.996Z",
+            "updatedAt": "2025-08-30T05:26:52.996Z"
+        },
+        {
+            "id": "f6d6346c-efcd-417a-bed8-5ded27f6a8f9",
+            "name": "Teh Hijau Premium",
+            "description": "Teh hijau organik",
+            "sku": "THG-001",
+            "price": "25000",
+            "discountPercent": 10,
+            "categoryId": "d257e74d-4f04-419c-af0d-69d54aebd07c",
+            "subcategoryId": null,
+            "sellerProfileId": "93924128-4f6c-4f7d-b234-e63c0069004d",
+            "weightGram": 200,
+            "packaging": "pouch",
+            "expiresAt": "2026-01-01T00:00:00.000Z",
+            "storageInstructions": "Simpan di tempat sejuk",
+            "stock": 100,
+            "minOrder": 1,
+            "maxOrder": 10,
+            "images": [
+                "https://.../1.jpg",
+                "https://.../2.jpg"
+            ],
+            "flavors": [
+                "Original",
+                "Mint"
+            ],
+            "ingredients": [
+                "Daun teh hijau"
+            ],
+            "tags": [
+                "teh",
+                "organik"
+            ],
+            "likesCount": 0,
+            "averageRating": 0,
+            "ratingCount": 0,
+            "createdAt": "2025-08-28T14:43:34.595Z",
+            "updatedAt": "2025-08-28T14:43:34.595Z"
+        },
+    ]
+}
+
+```
+
 ---
 
 ## Catatan Implementasi
+
 - Semua operasi tulis kritikal memakai transaksi Prisma (`prisma.$transaction`).
 - Beberapa endpoint memerlukan role seller via middleware `requireSeller` dan auth via `authMiddleware`.
 - `sku` unik di `ProductSeller`; konflik akan mengembalikan 409 di POST create.
