@@ -49,71 +49,78 @@ model SellerProfile {
 }
 
 model Categories {
-  id            String            @id @default(uuid())
+  id            String          @id @default(uuid())
   name          String
   icon          String
   color         String
   image         String
-  product_count Int               @default(0)
+  product_count Int             @default(0)
   subcategories Subcategories[]
   products      ProductSeller[]
 }
 
 model Subcategories {
-  id            String           @id @default(uuid())
+  id            String          @id @default(uuid())
   name          String
   image         String
-  product_count Int              @default(0)
+  product_count Int             @default(0)
   categoryId    String
-  category      Categories       @relation(fields: [categoryId], references: [id])
+  category      Categories      @relation(fields: [categoryId], references: [id])
   products      ProductSeller[]
 }
 
 model ProductSeller {
-  id              String         @id @default(uuid())
-  name            String
-  description     String?
-  sku             String?        @unique
-  price           Decimal?       @db.Decimal(10, 2)
-  discountPercent Int            @default(0)
-  categoryId      String?
-  category        Categories?    @relation(fields: [categoryId], references: [id])
-  subcategoryId   String?
-  subcategory     Subcategories? @relation(fields: [subcategoryId], references: [id])
-  sellerProfileId String
-  sellerProfile   SellerProfile  @relation(fields: [sellerProfileId], references: [id])
-  weightGram      Int            @default(0)
-  packaging       String?
-  expiresAt       DateTime?
+  id                  String         @id @default(uuid())
+  name                String
+  description         String?
+  sku                 String?        @unique
+  price               Decimal?       @db.Decimal(10, 2)
+  discountPercent     Int            @default(0)
+  categoryId          String?
+  category            Categories?    @relation(fields: [categoryId], references: [id])
+  subcategoryId       String?
+  subcategory         Subcategories? @relation(fields: [subcategoryId], references: [id])
+  sellerProfileId     String
+  sellerProfile       SellerProfile  @relation(fields: [sellerProfileId], references: [id])
+  weightGram          Int            @default(0)
+  packaging           String?
+  expiresAt           DateTime?
   storageInstructions String?
-  stock           Int            @default(0)
-  minOrder        Int            @default(1)
-  maxOrder        Int?
-  images          String[]
-  flavors         String[]
-  ingredients     String[]
-  tags            String[]
-  likesCount      Int            @default(0)
-  likes           ProductLike[]
-  averageRating   Float          @default(0)
-  ratingCount     Int            @default(0)
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  stock               Int            @default(0)
+  minOrder            Int            @default(1)
+  maxOrder            Int?
+  images              String[]
+  flavors             String[]
+  ingredients         String[]
+  tags                String[]
+  likesCount          Int            @default(0)
+  likes               ProductLike[]
+  averageRating       Float          @default(0)
+  ratingCount         Int            @default(0)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
 }
 
 model ProductLike {
-  id         String        @id @default(uuid())
-  productId  String
-  product    ProductSeller @relation(fields: [productId], references: [id])
+  id        String        @id @default(uuid())
+  productId String
+  product   ProductSeller @relation(fields: [productId], references: [id])
 
-  userId     String
-  user       User          @relation(fields: [userId], references: [id])
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 
-  createdAt  DateTime      @default(now())
+  createdAt DateTime @default(now())
 
   @@unique([userId, productId])
   @@index([productId])
   @@index([userId])
+}
+
+model Banner {
+  id String @id @default(uuid())
+  title String
+  description String
+  images String[]
 }
 
 enum UserRole {

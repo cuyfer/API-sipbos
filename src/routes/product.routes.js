@@ -5,6 +5,8 @@ const authMiddleware = require("../middlewares/authMiddleware");
 const authMiddlewareGetProductsLikes = require("../middlewares/authMiddlewareGetProductsLikes");
 
 const router = express.Router();
+express().use(express.json());
+express().use(express.urlencoded({ extended: true }));
 
 // Guard role seller (cek role dari DB)
 async function requireSeller(req, res, next) {
@@ -541,11 +543,9 @@ router.get("/products", authMiddlewareGetProductsLikes, async (req, res) => {
 
     const userId = req.user?.id;
     // const { userId } = req.body
-    console.log(userId);
 
     let likedProductIds = [];
     if (userId) {
-      console.log("jalan euy....");
       const likes = await prisma.productLike.findMany({
         where: { userId },
         select: { productId: true },
@@ -558,9 +558,12 @@ router.get("/products", authMiddlewareGetProductsLikes, async (req, res) => {
       isLiked: likedProductIds.includes(item.id),
     }));
 
-    console.log(itemsWithIsLiked);
+    const likedCountOnPage = itemsWithIsLiked.filter(i => i.isLiked).length;
+
+
     return res.json({
       message: "Products retrieved",
+      likedProduct:likedCountOnPage,
       data: itemsWithIsLiked,
       pagination: {
         page,
@@ -579,44 +582,67 @@ router.get("/products", authMiddlewareGetProductsLikes, async (req, res) => {
  * PUBLIC: Get product detail for users
  * GET /products/:id
  */
-router.get("/products/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const product = await prisma.productSeller.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        sku: true,
-        price: true,
-        discountPercent: true,
-        images: true,
-        flavors: true,
-        ingredients: true,
-        tags: true,
-        weightGram: true,
-        packaging: true,
-        expiresAt: true,
-        storageInstructions: true,
-        stock: true,
-        minOrder: true,
-        maxOrder: true,
-        likesCount: true,
-        averageRating: true,
-        ratingCount: true,
-        category: true,
-        subcategory: true,
-        createdAt: true,
-      },
-    });
-    if (!product) return res.status(404).json({ message: "Product not found" });
-    return res.json({ message: "Product detail", data: product });
-  } catch (err) {
-    console.error("Public product detail error", err);
-    return res.status(500).json({ message: "Server error" });
+router.get("/products/:id",
+  authMiddlewareGetProductsLikes,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const product = await prisma.productSeller.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          sku: true,
+          price: true,
+          discountPercent: true,
+          images: true,
+          flavors: true,
+          ingredients: true,
+          tags: true,
+          weightGram: true,
+          packaging: true,
+          expiresAt: true,
+          storageInstructions: true,
+          stock: true,
+          minOrder: true,
+          maxOrder: true,
+          likesCount: true,
+          averageRating: true,
+          ratingCount: true,
+          category: true,
+          subcategory: true,
+          createdAt: true,
+        },
+      });
+
+      const userId = req.user?.id;
+      // const { userId } = req.body
+
+      let likedProductIds = [];
+      if (userId) {
+        const likes = await prisma.productLike.findMany({
+          where: { userId },
+          select: { productId: true },
+        });
+        likedProductIds = likes.map((l) => l.productId);
+      }
+
+      const itemsWithIsLiked = {
+        ...product,
+        isLiked: likedProductIds.includes(product.id),
+      };
+
+      // console.log(itemsWithIsLiked);
+      if (!product || !itemsWithIsLiked)
+        return res.status(404).json({ message: "Product not found" });
+      return res.json({ message: "Product detail", data: itemsWithIsLiked });
+    } catch (err) {
+      console.error("Public product detail error", err);
+      return res.status(500).json({ message: "Server error" });
+    }
   }
-});
+);
 
 /**
  * GET Products
@@ -624,7 +650,7 @@ router.get("/products/:id", async (req, res) => {
  * responses = {}
  */
 
-router.get("/get/product/", authMiddleware, requireSeller, async (req, res) => {
+router.get("/get/product", authMiddleware, requireSeller, async (req, res) => {
   try {
     const page = Number(req.query.page || 1);
     const pageSize = Number(req.query.pageSize || 10);
@@ -670,9 +696,39 @@ router.get("/get/product/", authMiddleware, requireSeller, async (req, res) => {
       }),
     ]);
 
-    return res.json({
+    const userId = req.user?.id;
+    // const { userId } = req.body
+
+    let likedProductIds = [];
+    if (userId) {
+      const likes = await prisma.productLike.findMany({
+        where: { userId },
+        select: { productId: true },
+      });
+      likedProductIds = likes.map((l) => l.productId);
+    }
+
+    const itemsWithIsLiked = items.map((item) => ({
+      ...item,
+      isLiked: likedProductIds.includes(item.id),
+    }));
+
+    if (!items || !likedProductIds) {
+      return res.status(401).json({
+        message: "Product Not Found",
+        data: null,
+        pagination: {
+          page,
+          pageSize,
+          total,
+          totalPages: Math.ceil(total / pageSize),
+        },
+      });
+    }
+
+    return res.status(200).json({
       message: "Products retrieved",
-      data: items,
+      data: itemsWithIsLiked,
       pagination: {
         page,
         pageSize,
@@ -702,7 +758,26 @@ router.get("/product/:id", authMiddleware, requireSeller, async (req, res) => {
     });
     if (!product) return res.status(404).json({ message: "Product not found" });
 
-    return res.json({ message: "Product detail", data: product });
+    const userId = req.user?.id;
+
+    let likedProductIds = [];
+    if (userId) {
+      const likes = await prisma.productLike.findMany({
+        where: { userId },
+        select: { productId: true },
+      });
+      likedProductIds = likes.map((l) => l.productId);
+    }
+
+    const productWithIsLiked = {
+      ...product,
+      isLiked: likedProductIds.includes(product.id),
+    };
+
+    return res.status(200).json({
+      message: "Product detail",
+      data: productWithIsLiked,
+    });
   } catch (err) {
     console.error("Get product detail error", err);
     return res.status(500).json({ message: "Server error" });
@@ -714,39 +789,60 @@ router.get("/product/:id", authMiddleware, requireSeller, async (req, res) => {
  * get
  * responses = {}
  */
-router.get("/get/preferred/products", async (req, res) => {
-  try {
-    // ambil query param "take"
-    const number = parseInt(req.query.take);
+router.get(
+  "/get/preferred/products",
+  authMiddlewareGetProductsLikes,
+  async (req, res) => {
+    try {
+      // ambil query param "take"
+      const number = parseInt(req.query.take);
 
-    const products = await prisma.productSeller.findMany({
-      orderBy: {
-        likesCount: "desc",
-      },
-      take: isNaN(number) ? undefined : number, // kalau ada number → ambil segitu, kalau nggak ada → semua
-    });
+      const products = await prisma.productSeller.findMany({
+        orderBy: {
+          likesCount: "desc",
+        },
+        take: isNaN(number) ? undefined : number, // kalau ada number → ambil segitu, kalau nggak ada → semua
+      });
 
-    if (products.length === 0) {
-      return res.status(404).json({
-        message: "Most liked products not found!",
-        data: [],
+      if (products.length === 0) {
+        return res.status(404).json({
+          message: "Most liked products not found!",
+          data: [],
+        });
+      }
+
+      const userId = req.user?.id;
+      // const { userId } = req.body
+
+      let likedProductIds = [];
+      if (userId) {
+        const likes = await prisma.productLike.findMany({
+          where: { userId },
+          select: { productId: true },
+        });
+        likedProductIds = likes.map((l) => l.productId);
+      }
+
+      const itemsWithIsLiked = products.map((item) => ({
+        ...item,
+        isLiked: likedProductIds.includes(item.id),
+      }));
+
+      return res.status(200).json({
+        message: isNaN(number)
+          ? "List of most liked products"
+          : `List ${number} of most liked products`,
+        data: itemsWithIsLiked,
+      });
+    } catch (error) {
+      console.error("Unexpected Error:", error);
+      return res.status(500).json({
+        message: "Unexpected Error",
+        data: null,
       });
     }
-
-    return res.status(200).json({
-      message: isNaN(number)
-        ? "List of most liked products"
-        : `List ${number} of most liked products`,
-      data: products,
-    });
-  } catch (error) {
-    console.error("Unexpected Error:", error);
-    return res.status(500).json({
-      message: "Unexpected Error",
-      data: null,
-    });
   }
-});
+);
 
 /**
  * LIKE product (idempotent)
@@ -856,5 +952,117 @@ router.delete("/product/:id/like", authMiddleware, async (req, res) => {
     return res.status(500).json({ message: "Server error" });
   }
 });
+
+/**
+ *
+ * Search Product
+ * GET /search/products?q=
+ */
+
+router.get(
+  "/search/products",
+  authMiddlewareGetProductsLikes,
+  async (req, res) => {
+    try {
+      const { q } = req.query;
+      const products = await prisma.productSeller.findMany({
+        where: {
+          OR: [
+            { name: { contains: q, mode: "insensitive" } },
+            { description: { contains: q, mode: "insensitive" } },
+          ],
+        },
+        include: {
+          category: true,
+          subcategory: true,
+        },
+      });
+
+      const userId = req.user?.id;
+
+      let likedProductIds = [];
+      if (userId) {
+        const likes = await prisma.productLike.findMany({
+          where: { userId },
+          select: { productId: true },
+        });
+        likedProductIds = likes.map((l) => l.productId);
+      }
+
+      const itemsWithIsLiked = products.map((item) => ({
+        ...item,
+        isLiked: likedProductIds.includes(item.id),
+      }));
+
+      const likedCountOnPage = itemsWithIsLiked.filter(i => i.isLiked).length;
+
+      return res.status(200).json({
+        message: "Search product",
+        input: q,
+        countLike: likedCountOnPage,
+        data: itemsWithIsLiked,
+      });
+    } catch (error) {
+      console.error("Search product error", error);
+      return res.status(500).json({ message: "Server error" });
+    }
+  }
+);
+
+router.get(
+  "/product/like/by/user",
+  authMiddlewareGetProductsLikes,
+  async (req, res) => {
+    try {
+      const userId = req.user?.id;
+
+      if (!userId) {
+        console.log("User Not Found");
+        return res
+          .status(404)
+          .json({ message: "User Not Found", likedProduct: 0, data: null });
+      }
+
+      const dataProducts = await prisma.productLike.findMany({
+        where: {
+          userId,
+        },
+        select: {
+          product: true,
+        },
+      });
+
+      let likedProductIds = [];
+      if (userId) {
+        const likes = await prisma.productLike.findMany({
+          where: { userId },
+          select: { productId: true },
+        });
+        likedProductIds = likes.map((l) => l.productId);
+      }
+
+      const itemsWithIsLiked = dataProducts.map((item) => ({
+        ...item.product,
+        isLiked: likedProductIds.includes(item.product.id),
+      }));
+
+      if (!dataProducts) {
+        console.log("Data Product Null");
+        return res
+          .status(401)
+          .json({ message: "Data Product Null", likedProduct: 0, data: null });
+      }
+
+      return res.status(200).json({
+        message: "Successfuly Get Products",
+        likedProduct: dataProducts.length,
+        data: itemsWithIsLiked,
+      });
+    } catch (error) {
+      console.log("Unexxpected Error " + error);
+      return res.status(500).json({ message: "Unexpected Error", data: null });
+    }
+  }
+);
 
 module.exports = router;

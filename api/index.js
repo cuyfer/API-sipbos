@@ -7,6 +7,7 @@ const prisma = require("../src/utils/prisma");
 const cors = require("cors");
 const authRoutes = require("../src/routes/auth.routes");
 const productRoutes = require("../src/routes/product.routes");
+const eventRoutes = require("../src/routes/event.routes");
 
 // middleware
 app.use(json());
@@ -37,6 +38,9 @@ app.use("/v1/auth", authRoutes);
 
 // Product
 app.use("/v1", productRoutes);
+app.use("/v1", eventRoutes);
+
+//
 
 app.listen(port, () => {});
 

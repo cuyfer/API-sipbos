@@ -6,6 +6,8 @@ const authMiddleware = require("../middlewares/authMiddleware");
 const { OAuth2Client } = require("google-auth-library");
 
 const router = express.Router();
+express().use(express.json());
+express().use(express.urlencoded({ extended: true }));
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const buyer = "buyer";
