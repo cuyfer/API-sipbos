@@ -8,24 +8,13 @@ const cors = require("cors");
 const authRoutes = require("../src/routes/auth.routes");
 const productRoutes = require("../src/routes/product.routes");
 const eventRoutes = require("../src/routes/event.routes");
+// const serverless = require("serverless-http");
 
 // middleware
 app.use(json());
 app.use(urlencoded({ extended: true }));
 app.use(cors());
 // app.options('*', cors());
-
-// // Swagger UI
-// const swaggerUi = require("swagger-ui-express");
-// const openapi = require("../Doc/openapi.json");
-// app.use(
-//   "/api-docs",
-//   swaggerUi.serve,
-//   swaggerUi.setup(openapi, { swaggerOptions: { validatorUrl: null } })
-// );
-// app.get("/openapi.json", (req, res) => {
-//   res.json(openapi);
-// });
 
 // Rute sederhana
 app.get("/", (req, res) => {
@@ -45,3 +34,4 @@ app.use("/v1", eventRoutes);
 app.listen(port, () => {});
 
 module.exports = app;
+// module.exports.handler = serverless(app);

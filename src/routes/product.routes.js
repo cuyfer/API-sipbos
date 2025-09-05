@@ -5,8 +5,8 @@ const authMiddleware = require("../middlewares/authMiddleware");
 const authMiddlewareGetProductsLikes = require("../middlewares/authMiddlewareGetProductsLikes");
 
 const router = express.Router();
-express().use(express.json());
-express().use(express.urlencoded({ extended: true }));
+// express().use(express.json());
+// express().use(express.urlencoded({ extended: true }));
 
 // Guard role seller (cek role dari DB)
 async function requireSeller(req, res, next) {

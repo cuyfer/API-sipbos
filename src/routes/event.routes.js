@@ -3,11 +3,11 @@ const prisma = require("../utils/prisma");
 const { Prisma } = require("@prisma/client");
 const authMiddleware = require("../middlewares/authMiddleware");
 const authMiddlewareGetProductsLikes = require("../middlewares/authMiddlewareGetProductsLikes");
-const supabase = require("../config/supabase");
+// const supabase = require("../config/supabase");
 const multer = require("multer");
 
-express().use(express.json());
-express().use(express.urlencoded({ extended: true }));
+// express().use(express.json());
+// express().use(express.urlencoded({ extended: true }));
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
