@@ -198,26 +198,6 @@ router.post("/login", async (req, res) => {
   }
 });
 
-/**
- * GET /auth/me
- * header: Authorization: Bearer <token>
- */
-router.get("/me", authMiddleware, async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      include: { profile: true },
-    });
-    if (!user) return res.status(404).json({ message: "User not found" });
-
-    delete user.password;
-    return res.json({ user });
-  } catch (err) {
-    console.error("Me error", err);
-    return res.status(500).json({ message: "Server error" });
-  }
-});
 
 /**
  * for buyer

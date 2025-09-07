@@ -3,8 +3,11 @@ const prisma = require("../utils/prisma");
 const { Prisma } = require("@prisma/client");
 const authMiddleware = require("../middlewares/authMiddleware");
 const authMiddlewareGetProductsLikes = require("../middlewares/authMiddlewareGetProductsLikes");
-
+const multer = require("multer");
+const { storage } = require("../config/appwrite");
 const router = express.Router();
+const upload = multer({ storage: multer.memoryStorage() });
+
 // express().use(express.json());
 // express().use(express.urlencoded({ extended: true }));
 
@@ -155,129 +158,168 @@ router.post("/product/categories/post", async (req, res) => {
  * Body: { name, image?, description?, categoryName }
  * - Mencari ke Categories.name dulu; jika tidak ada, ke Subcategories.name
  */
-router.post("/product", authMiddleware, requireSeller, async (req, res) => {
-  try {
-    const {
-      name,
-      description,
-      sku,
-      price,
-      discountPercent,
-      categoryId,
-      subcategoryId,
-      categoryName, // optional alternative lookup
-      subcategory, // optional alternative lookup
-      images = [],
-      weightGram,
-      packaging,
-      expiresAt,
-      storageInstructions,
-      stock,
-      minOrder,
-      maxOrder,
-      flavors = [],
-      ingredients = [],
-      tags = [],
-    } = req.body;
+router.post(
+  "/product",
+  upload.array("images"),
+  authMiddleware,
+  requireSeller,
+  async (req, res) => {
+    try {
+      const {
+        name,
+        description,
+        sku,
+        price,
+        discountPercent,
+        categoryName, // wajib
+        subcategory, // wajib
+        // images = [],
+        weightGram,
+        packaging,
+        expiresAt,
+        storageInstructions,
+        stock,
+        minOrder,
+        maxOrder,
+        flavors = [],
+        ingredients = [],
+        tags = [],
+      } = req.body;
+      const images = req.files;
 
-    if (!name) return res.status(400).json({ message: "name is required" });
-    if (price !== undefined && Number(price) < 0)
-      return res.status(400).json({ message: "price must be >= 0" });
-    if (discountPercent !== undefined) {
-      const d = Number(discountPercent);
-      if (d < 0 || d > 100)
+      if (!name) return res.status(400).json({ message: "name is required" });
+      if (!categoryName || !subcategory) {
         return res
           .status(400)
-          .json({ message: "discountPercent must be 0..100" });
-    }
-    if (minOrder !== undefined && Number(minOrder) < 1)
-      return res.status(400).json({ message: "minOrder must be >= 1" });
-    if (
-      maxOrder !== undefined &&
-      minOrder !== undefined &&
-      Number(maxOrder) < Number(minOrder)
-    )
-      return res.status(400).json({ message: "maxOrder must be >= minOrder" });
-    if (weightGram !== undefined && Number(weightGram) < 0)
-      return res.status(400).json({ message: "weightGram must be >= 0" });
-
-    if (price !== undefined) {
-      const p = Number(price);
-      if (p >= 1e8)
+          .json({ message: "categoryName and subcategory are required" });
+      }
+      if (price !== undefined && Number(price) < 0)
+        return res.status(400).json({ message: "price must be >= 0" });
+      if (discountPercent !== undefined) {
+        const d = Number(discountPercent);
+        if (d < 0 || d > 100)
+          return res
+            .status(400)
+            .json({ message: "discountPercent must be 0..100" });
+      }
+      if (minOrder !== undefined && Number(minOrder) < 1)
+        return res.status(400).json({ message: "minOrder must be >= 1" });
+      if (
+        maxOrder !== undefined &&
+        minOrder !== undefined &&
+        Number(maxOrder) < Number(minOrder)
+      )
+        return res
+          .status(400)
+          .json({ message: "maxOrder must be >= minOrder" });
+      if (weightGram !== undefined && Number(weightGram) < 0)
+        return res.status(400).json({ message: "weightGram must be >= 0" });
+      if (price !== undefined && Number(price) >= 1e8)
         return res.status(400).json({ message: "price must be < 100,000,000" });
-    }
 
-    const seller = await prisma.sellerProfile.findUnique({
-      where: { userId: req.user.id },
-    });
-    if (!seller)
-      return res.status(403).json({ message: "Seller profile not found" });
+      const seller = await prisma.sellerProfile.findUnique({
+        where: { userId: req.user.id },
+      });
+      if (!seller)
+        return res.status(403).json({ message: "Seller profile not found" });
 
-    let resolvedCategoryId = categoryId;
-    let resolvedSubcategoryId = subcategoryId;
+      const category = await prisma.categories.findFirst({
+        where: { name: categoryName },
+      });
+      if (!category)
+        return res.status(400).json({ message: "Category not found" });
 
-    if (categoryName && !resolvedCategoryId && !resolvedSubcategoryId) {
-      const taxonomy = await findTaxonomyByName(categoryName);
-      if (!taxonomy)
+      const subcat = await prisma.subcategories.findFirst({
+        where: { name: subcategory, categoryId: category.id },
+      });
+      if (!subcat)
         return res
           .status(400)
-          .json({ message: "Category/Subcategory not found" });
-      if (taxonomy.type === "category") resolvedCategoryId = taxonomy.id;
-      else resolvedSubcategoryId = taxonomy.id;
-    }
+          .json({ message: "Subcategory not found for this category" });
 
-    const result = await prisma.$transaction(async (tx) => {
-      const created = await tx.productSeller.create({
-        data: {
-          name,
-          description,
-          sku: sku ?? undefined,
-          price: price !== undefined ? new Prisma.Decimal(price) : undefined,
-          discountPercent:
-            discountPercent !== undefined ? Number(discountPercent) : undefined,
-          categoryId: resolvedCategoryId ?? undefined,
-          // subcategoryId: resolvedSubcategoryId ?? undefined ?? subcategory,
-          subcategoryId: resolvedSubcategoryId ?? undefined,
-          // subcategoryId: subcategory ?? undefined,
-          sellerProfileId: seller.id,
-          images: Array.isArray(images) ? images : [],
-          weightGram: weightGram !== undefined ? Number(weightGram) : undefined,
-          packaging: packaging ?? undefined,
-          expiresAt: expiresAt ? new Date(expiresAt) : undefined,
-          storageInstructions: storageInstructions ?? undefined,
-          stock: stock !== undefined ? Number(stock) : undefined,
-          minOrder: minOrder !== undefined ? Number(minOrder) : undefined,
-          maxOrder: maxOrder !== undefined ? Number(maxOrder) : undefined,
-          flavors: Array.isArray(flavors) ? flavors : [],
-          ingredients: Array.isArray(ingredients) ? ingredients : [],
-          tags: Array.isArray(tags) ? tags : [],
-        },
-      });
-
-      if (resolvedCategoryId) {
-        await recomputeCategoryCount(tx, resolvedCategoryId);
-      } else if (resolvedSubcategoryId) {
-        const updatedSub = await tx.subcategories.update({
-          where: { id: resolvedSubcategoryId },
-          data: { product_count: { increment: 1 } },
-        });
-        await recomputeCategoryCount(tx, updatedSub.categoryId);
+      if (!images || !images.length) {
+        return res
+          .status(400)
+          .json({ message: "Missing Required Fields Images" });
       }
 
-      return created;
-    });
+      let imgUrls = [];
+      for (const image of images) {
+        const fileName = `${Date.now()}-${image.originalname}`;
 
-    return res.status(201).json({ message: "Product created", data: result });
-  } catch (err) {
-    if (err?.code === "P2002") {
-      return res
-        .status(409)
-        .json({ message: "Duplicate unique field (e.g., sku)" });
+        const result = await storage.createFile(
+          process.env.APPWRITE_BUCKET_ID,
+          "unique()",
+          new File([image.buffer], fileName, { type: image.mimetype })
+        );
+
+        const fileId = result.$id;
+
+        const fileUrl = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_BUCKET_ID}/files/${fileId}/view?project=${process.env.APPWRITE_PROJECT_ID}&mode=admin`;
+        imgUrls.push(fileUrl);
+      }
+
+      const result = await prisma.$transaction(async (tx) => {
+        const created = await tx.productSeller.create({
+          data: {
+            name,
+            description,
+            sku: sku ?? undefined,
+            // price: price !== undefined ? new Prisma.Decimal(price) : undefined,
+            price:
+              price !== undefined
+                ? new Prisma.Decimal(Number(price))
+                : undefined,
+            discountPercent:
+              discountPercent !== undefined
+                ? Number(discountPercent)
+                : undefined,
+            categoryId: category.id,
+            subcategoryId: subcat.id,
+            sellerProfileId: seller.id,
+            images: Array.isArray(imgUrls) ? imgUrls : [],
+            weightGram:
+              weightGram !== undefined ? Number(weightGram) : undefined,
+            packaging: packaging ?? undefined,
+            // expiresAt: expiresAt ? new Date(expiresAt) : undefined,
+            expiresAt: expiresAt ? new Date(expiresAt) : null,
+            storageInstructions: storageInstructions ?? undefined,
+            stock: stock !== undefined ? Number(stock) : undefined,
+            minOrder: minOrder !== undefined ? Number(minOrder) : undefined,
+            maxOrder: maxOrder !== undefined ? Number(maxOrder) : undefined,
+            flavors: Array.isArray(flavors) ? flavors : [],
+            ingredients: Array.isArray(ingredients) ? ingredients : [],
+            tags: Array.isArray(tags) ? tags : [],
+          },
+        });
+        // console.log(result);
+
+        // update counter category & subcategory
+        await tx.categories.update({
+          where: { id: category.id },
+          data: { product_count: { increment: 1 } },
+        });
+
+        await tx.subcategories.update({
+          where: { id: subcat.id },
+          data: { product_count: { increment: 1 } },
+        });
+
+        return created;
+      });
+
+      return res.status(201).json({ message: "Product created", data: result });
+    } catch (err) {
+      if (err?.code === "P2002") {
+        return res
+          .status(409)
+          .json({ message: "Duplicate unique field (e.g., sku)" });
+      }
+      console.error("Create product (full) error", err);
+      return res.status(500).json({ message: "Server error" });
     }
-    console.error("Create product (full) error", err);
-    return res.status(500).json({ message: "Server error" });
   }
-});
+);
 
 /**
  * UPDATE product (name/image/description/categoryName)
@@ -517,7 +559,6 @@ router.get("/products", authMiddlewareGetProductsLikes, async (req, res) => {
         : {}),
     };
 
-    // 1. Query products
     const [total, items] = await Promise.all([
       prisma.productSeller.count({ where }),
       prisma.productSeller.findMany({
@@ -537,12 +578,32 @@ router.get("/products", authMiddlewareGetProductsLikes, async (req, res) => {
           stock: true,
           category: true,
           subcategory: true,
+          sellerProfile: {
+            select: {
+              id: true,
+              shopName: true,
+              shopDescription: true,
+              shopAddress: true,
+              phoneNumber: true,
+              user: {
+                select: {
+                  id: true,
+                  email: true,
+                  profile: {
+                    select: {
+                      name: true,
+                      image: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
       }),
     ]);
 
     const userId = req.user?.id;
-    // const { userId } = req.body
 
     let likedProductIds = [];
     if (userId) {
@@ -553,18 +614,53 @@ router.get("/products", authMiddlewareGetProductsLikes, async (req, res) => {
       likedProductIds = likes.map((l) => l.productId);
     }
 
-    const itemsWithIsLiked = items.map((item) => ({
-      ...item,
-      isLiked: likedProductIds.includes(item.id),
-    }));
+    // Tambahkan objek seller + validasi yourProduct
+    const itemsWithIsLikedAndSeller = items.map((item) => {
+      let seller = null;
+      if (item.sellerProfile) {
+        seller = {
+          id: item.sellerProfile.id,
+          shopName: item.sellerProfile.shopName,
+          shopDescription: item.sellerProfile.shopDescription,
+          shopAddress: item.sellerProfile.shopAddress,
+          phoneNumber: item.sellerProfile.phoneNumber,
+          user: item.sellerProfile.user
+            ? {
+                id: item.sellerProfile.user.id,
+                email: item.sellerProfile.user.email,
+                profile: {
+                  name: item.sellerProfile.user.profile?.name || null,
+                  image: item.sellerProfile.user.profile?.image || null,
+                },
+              }
+            : null,
+        };
 
-    const likedCountOnPage = itemsWithIsLiked.filter(i => i.isLiked).length;
+        // 🔑 validasi apakah ini product milik seller yang login
+        if (
+          req.user?.role === "seller" &&
+          req.user?.id === item.sellerProfile.user.id
+        ) {
+          seller.yourProduct = true;
+        }
+      }
 
+      const { sellerProfile, ...rest } = item;
+      return {
+        ...rest,
+        isLiked: likedProductIds.includes(item.id),
+        seller,
+      };
+    });
+
+    const likedCountOnPage = itemsWithIsLikedAndSeller.filter(
+      (i) => i.isLiked
+    ).length;
 
     return res.json({
       message: "Products retrieved",
-      likedProduct:likedCountOnPage,
-      data: itemsWithIsLiked,
+      likedProduct: likedCountOnPage,
+      data: itemsWithIsLikedAndSeller,
       pagination: {
         page,
         pageSize,
@@ -582,7 +678,8 @@ router.get("/products", authMiddlewareGetProductsLikes, async (req, res) => {
  * PUBLIC: Get product detail for users
  * GET /products/:id
  */
-router.get("/products/:id",
+router.get(
+  "/products/:id",
   authMiddlewareGetProductsLikes,
   async (req, res) => {
     try {
@@ -613,12 +710,37 @@ router.get("/products/:id",
           category: true,
           subcategory: true,
           createdAt: true,
+          sellerProfile: {
+            select: {
+              id: true,
+              shopName: true,
+              shopDescription: true,
+              shopAddress: true,
+              phoneNumber: true,
+              user: {
+                select: {
+                  id: true,
+                  email: true,
+                  profile: {
+                    select: {
+                      name: true,
+                      image: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
       });
 
-      const userId = req.user?.id;
-      // const { userId } = req.body
+      if (!product) {
+        return res.status(404).json({ message: "Product not found" });
+      }
 
+      const userId = req.user?.id;
+
+      // cek like
       let likedProductIds = [];
       if (userId) {
         const likes = await prisma.productLike.findMany({
@@ -628,15 +750,49 @@ router.get("/products/:id",
         likedProductIds = likes.map((l) => l.productId);
       }
 
-      const itemsWithIsLiked = {
-        ...product,
+      // buat objek seller
+      let seller = null;
+      if (product.sellerProfile) {
+        seller = {
+          id: product.sellerProfile.id,
+          shopName: product.sellerProfile.shopName,
+          shopDescription: product.sellerProfile.shopDescription,
+          shopAddress: product.sellerProfile.shopAddress,
+          phoneNumber: product.sellerProfile.phoneNumber,
+          user: product.sellerProfile.user
+            ? {
+                id: product.sellerProfile.user.id,
+                email: product.sellerProfile.user.email,
+                profile: {
+                  name: product.sellerProfile.user.profile?.name || null,
+                  image: product.sellerProfile.user.profile?.image || null,
+                },
+              }
+            : null,
+        };
+
+        // validasi yourProduct
+        if (
+          req.user?.role === "seller" &&
+          req.user?.id === product.sellerProfile.user.id
+        ) {
+          seller.yourProduct = true;
+        }
+      }
+
+      // hapus sellerProfile biar clean, ganti ke seller
+      const { sellerProfile, ...rest } = product;
+
+      const productWithExtras = {
+        ...rest,
         isLiked: likedProductIds.includes(product.id),
+        seller,
       };
 
-      // console.log(itemsWithIsLiked);
-      if (!product || !itemsWithIsLiked)
-        return res.status(404).json({ message: "Product not found" });
-      return res.json({ message: "Product detail", data: itemsWithIsLiked });
+      return res.json({
+        message: "Product detail",
+        data: productWithExtras,
+      });
     } catch (err) {
       console.error("Public product detail error", err);
       return res.status(500).json({ message: "Server error" });
@@ -794,14 +950,29 @@ router.get(
   authMiddlewareGetProductsLikes,
   async (req, res) => {
     try {
-      // ambil query param "take"
       const number = parseInt(req.query.take);
 
       const products = await prisma.productSeller.findMany({
-        orderBy: {
-          likesCount: "desc",
+        orderBy: { likesCount: "desc" },
+        take: isNaN(number) ? undefined : number,
+        include: {
+          sellerProfile: {
+            select: {
+              id: true,
+              shopName: true,
+              shopDescription: true,
+              shopAddress: true,
+              phoneNumber: true,
+              user: {
+                select: {
+                  id: true,
+                  email: true,
+                  profile: { select: { name: true, image: true } },
+                },
+              },
+            },
+          },
         },
-        take: isNaN(number) ? undefined : number, // kalau ada number → ambil segitu, kalau nggak ada → semua
       });
 
       if (products.length === 0) {
@@ -812,8 +983,6 @@ router.get(
       }
 
       const userId = req.user?.id;
-      // const { userId } = req.body
-
       let likedProductIds = [];
       if (userId) {
         const likes = await prisma.productLike.findMany({
@@ -823,10 +992,28 @@ router.get(
         likedProductIds = likes.map((l) => l.productId);
       }
 
-      const itemsWithIsLiked = products.map((item) => ({
-        ...item,
-        isLiked: likedProductIds.includes(item.id),
-      }));
+      const itemsWithIsLiked = products.map((item) => {
+        const { sellerProfile, ...rest } = item;
+        return {
+          ...rest,
+          isLiked: likedProductIds.includes(item.id),
+          seller: sellerProfile
+            ? {
+                id: sellerProfile.id,
+                shopName: sellerProfile.shopName,
+                shopDescription: sellerProfile.shopDescription,
+                shopAddress: sellerProfile.shopAddress,
+                phoneNumber: sellerProfile.phoneNumber,
+                user: {
+                  id: sellerProfile.user.id,
+                  email: sellerProfile.user.email,
+                  name: sellerProfile.user.profile?.name || null,
+                  image: sellerProfile.user.profile?.image || null,
+                },
+              }
+            : null,
+        };
+      });
 
       return res.status(200).json({
         message: isNaN(number)
@@ -836,10 +1023,7 @@ router.get(
       });
     } catch (error) {
       console.error("Unexpected Error:", error);
-      return res.status(500).json({
-        message: "Unexpected Error",
-        data: null,
-      });
+      return res.status(500).json({ message: "Unexpected Error", data: null });
     }
   }
 );
@@ -958,28 +1142,74 @@ router.delete("/product/:id/like", authMiddleware, async (req, res) => {
  * Search Product
  * GET /search/products?q=
  */
-
 router.get(
   "/search/products",
   authMiddlewareGetProductsLikes,
   async (req, res) => {
     try {
-      const { q } = req.query;
+      const {
+        q,
+        categoryId,
+        subcategoryId,
+        page = 1,
+        pageSize = 10,
+      } = req.query;
+
+      const pageNum = parseInt(page, 10) || 1;
+      const sizeNum = parseInt(pageSize, 10) || 10;
+
+      // filter conditions
+      const filters = [];
+
+      if (q) {
+        filters.push(
+          { name: { contains: q, mode: "insensitive" } },
+          { description: { contains: q, mode: "insensitive" } }
+        );
+      }
+
+      if (categoryId) filters.push({ categoryId });
+      if (subcategoryId) filters.push({ subcategoryId });
+
+      // total count
+      const total = await prisma.productSeller.count({
+        where: {
+          AND: filters.length ? [{ OR: filters }] : undefined,
+        },
+      });
+
+      // paginated products
       const products = await prisma.productSeller.findMany({
         where: {
-          OR: [
-            { name: { contains: q, mode: "insensitive" } },
-            { description: { contains: q, mode: "insensitive" } },
-          ],
+          AND: filters.length ? [{ OR: filters }] : undefined,
         },
         include: {
           category: true,
           subcategory: true,
+          sellerProfile: {
+            select: {
+              id: true,
+              shopName: true,
+              shopDescription: true,
+              shopAddress: true,
+              phoneNumber: true,
+              user: {
+                select: {
+                  id: true,
+                  email: true,
+                  profile: { select: { name: true, image: true } },
+                },
+              },
+            },
+          },
         },
+        skip: (pageNum - 1) * sizeNum,
+        take: sizeNum,
+        orderBy: { createdAt: "desc" },
       });
 
+      // cek like
       const userId = req.user?.id;
-
       let likedProductIds = [];
       if (userId) {
         const likes = await prisma.productLike.findMany({
@@ -989,15 +1219,39 @@ router.get(
         likedProductIds = likes.map((l) => l.productId);
       }
 
-      const itemsWithIsLiked = products.map((item) => ({
-        ...item,
-        isLiked: likedProductIds.includes(item.id),
-      }));
+      const itemsWithIsLiked = products.map((item) => {
+        const { sellerProfile, ...rest } = item;
+        return {
+          ...rest,
+          isLiked: likedProductIds.includes(item.id),
+          seller: sellerProfile
+            ? {
+                id: sellerProfile.id,
+                shopName: sellerProfile.shopName,
+                shopDescription: sellerProfile.shopDescription,
+                shopAddress: sellerProfile.shopAddress,
+                phoneNumber: sellerProfile.phoneNumber,
+                user: {
+                  id: sellerProfile.user.id,
+                  email: sellerProfile.user.email,
+                  name: sellerProfile.user.profile?.name || null,
+                  image: sellerProfile.user.profile?.image || null,
+                },
+              }
+            : null,
+        };
+      });
 
-      const likedCountOnPage = itemsWithIsLiked.filter(i => i.isLiked).length;
+      const likedCountOnPage = itemsWithIsLiked.filter((i) => i.isLiked).length;
 
       return res.status(200).json({
         message: "Search product",
+        pagination: {
+          page: pageNum,
+          pageSize: sizeNum,
+          total,
+          totalPages: Math.ceil(total / sizeNum),
+        },
         input: q,
         countLike: likedCountOnPage,
         data: itemsWithIsLiked,
@@ -1017,18 +1271,36 @@ router.get(
       const userId = req.user?.id;
 
       if (!userId) {
-        console.log("User Not Found");
-        return res
-          .status(404)
-          .json({ message: "User Not Found", likedProduct: 0, data: null });
+        return res.status(404).json({
+          message: "User Not Found",
+          likedProduct: 0,
+          data: null,
+        });
       }
 
       const dataProducts = await prisma.productLike.findMany({
-        where: {
-          userId,
-        },
+        where: { userId },
         select: {
-          product: true,
+          product: {
+            include: {
+              sellerProfile: {
+                select: {
+                  id: true,
+                  shopName: true,
+                  shopDescription: true,
+                  shopAddress: true,
+                  phoneNumber: true,
+                  user: {
+                    select: {
+                      id: true,
+                      email: true,
+                      profile: { select: { name: true, image: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
       });
 
@@ -1041,25 +1313,36 @@ router.get(
         likedProductIds = likes.map((l) => l.productId);
       }
 
-      const itemsWithIsLiked = dataProducts.map((item) => ({
-        ...item.product,
-        isLiked: likedProductIds.includes(item.product.id),
-      }));
-
-      if (!dataProducts) {
-        console.log("Data Product Null");
-        return res
-          .status(401)
-          .json({ message: "Data Product Null", likedProduct: 0, data: null });
-      }
+      const itemsWithIsLiked = dataProducts.map((item) => {
+        const { sellerProfile, ...rest } = item.product;
+        return {
+          ...rest,
+          isLiked: likedProductIds.includes(item.product.id),
+          seller: sellerProfile
+            ? {
+                id: sellerProfile.id,
+                shopName: sellerProfile.shopName,
+                shopDescription: sellerProfile.shopDescription,
+                shopAddress: sellerProfile.shopAddress,
+                phoneNumber: sellerProfile.phoneNumber,
+                user: {
+                  id: sellerProfile.user.id,
+                  email: sellerProfile.user.email,
+                  name: sellerProfile.user.profile?.name || null,
+                  image: sellerProfile.user.profile?.image || null,
+                },
+              }
+            : null,
+        };
+      });
 
       return res.status(200).json({
-        message: "Successfuly Get Products",
+        message: "Successfully Get Products",
         likedProduct: dataProducts.length,
         data: itemsWithIsLiked,
       });
     } catch (error) {
-      console.log("Unexxpected Error " + error);
+      console.log("Unexpected Error " + error);
       return res.status(500).json({ message: "Unexpected Error", data: null });
     }
   }
