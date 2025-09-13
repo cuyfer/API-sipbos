@@ -6,12 +6,13 @@ const authMiddlewareGetProductsLikes = require("../middlewares/authMiddlewareGet
 // const supabase = require("../config/supabase");
 const multer = require("multer");
 const { storage } = require("../config/appwrite");
+const { fileFilter, upload } = require("../functions/filterMulterIMG");
 
 // express().use(express.json());
 // express().use(express.urlencoded({ extended: true }));
 
 const router = express.Router();
-const upload = multer({ storage: multer.memoryStorage() });
+// const upload = multer({ storage: multer.memoryStorage() });
 
 /**
  *
@@ -26,7 +27,7 @@ router.post(
   async (req, res) => {
     try {
       const { title, description } = req.body;
-      const images = req.files; 
+      const images = req.files;
 
       if (!title || !description || !images || !images.length) {
         return res.status(400).json({ message: "Missing required fields" });
@@ -34,16 +35,15 @@ router.post(
 
       let imgUrls = [];
 
-      for (const image of images) { 
-        const fileName = `${Date.now()}-${image.originalname}`; 
-      
+      for (const image of images) {
+        const fileName = `${Date.now()}-${image.originalname}`;
 
         const result = await storage.createFile(
           process.env.APPWRITE_BUCKET_ID,
           "unique()",
-          new File([image.buffer], fileName, { type: image.mimetype }) 
+          new File([image.buffer], fileName, { type: image.mimetype })
         );
-      
+
         const fileId = result.$id;
 
         const fileUrl = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_BUCKET_ID}/files/${fileId}/view?project=${process.env.APPWRITE_PROJECT_ID}&mode=admin`;
@@ -68,35 +68,6 @@ router.post(
     }
   }
 );
-
-// router.post("/event/banner/post", // ini route sementara dari banner pakai string bukan file
-//   async (req, res) => {
-//     try {
-//       const { title, description, images } = req.body;
-
-//       if (!title || !description || !images || !images.length) {
-//         console.log('error')
-//         return res.status(400).json({ message: "Missing required fields" });
-//       }
-
-//       const newBanner = await prisma.Banner.create({
-//         data: {
-//           title,
-//           description,
-//           images,
-//         },
-//       });
-
-//       res.status(201).json({
-//         message: "Banner uploaded successfully",
-//         data: newBanner,
-//       });
-//     } catch (error) {
-//       console.error("Unexpected Error:", error);
-//       return res.status(500).json({ message: "Unexpected Error", data: null });
-//     }
-//   }
-// );
 
 /**
  *

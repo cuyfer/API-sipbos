@@ -7,8 +7,8 @@ const authMiddlewareGetProductsLikes = require("../middlewares/authMiddlewareGet
 const multer = require("multer");
 const { storage } = require("../config/appwrite");
 const router = express.Router();
-const upload = multer({ storage: multer.memoryStorage() });
-
+// const upload = multer({ storage: multer.memoryStorage() });
+const { upload, fileFilter } = require("../functions/filterMulterIMG");
 /**
  *
  * PUT update User

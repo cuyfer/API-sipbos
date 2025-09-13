@@ -6,7 +6,21 @@ const authMiddlewareGetProductsLikes = require("../middlewares/authMiddlewareGet
 const multer = require("multer");
 const { storage } = require("../config/appwrite");
 const router = express.Router();
-const upload = multer({ storage: multer.memoryStorage() });
+const { upload, fileFilter } = require("../functions/filterMulterIMG");
+// const upload = multer({ storage: multer.memoryStorage() });
+
+router.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    // Error dari multer (misal size limit)
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({ error: "Only upload a maximum of 50mb" });
+    }
+    return res.status(400).json({ error: err.message });
+  } else if (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  next();
+});
 
 // express().use(express.json());
 // express().use(express.urlencoded({ extended: true }));
@@ -1084,7 +1098,7 @@ router.post("/product/:id/like", authMiddleware, async (req, res) => {
   }
 });
 
-/**
+/**o
  * UNLIKE product (idempotent)
  * DELETE /product/:id/like
  */
@@ -1343,6 +1357,237 @@ router.get(
       });
     } catch (error) {
       console.log("Unexpected Error " + error);
+      return res.status(500).json({ message: "Unexpected Error", data: null });
+    }
+  }
+);
+
+/**
+ *  Find Products By Categories
+ * Get /get/categories/by/:id      // id Categories
+ */
+router.get(
+  "/get/categories/by/:id",
+  authMiddlewareGetProductsLikes,
+  async (req, res) => {
+    try {
+      const { id } = req.params; // categoryId
+      const page = parseInt(req.query.page) || 1;
+      const pageSize = parseInt(req.query.pageSize) || 10;
+
+      if (!id) {
+        return res.status(400).json({ message: "Category ID is required" });
+      }
+
+      // validasi category
+      const category = await prisma.categories.findUnique({
+        where: { id },
+      });
+      if (!category) {
+        return res.status(404).json({ message: "Category Not Found" });
+      }
+
+      // ambil total produk
+      const total = await prisma.productSeller.count({
+        where: { categoryId: id },
+      });
+
+      // ambil produk dengan pagination
+      const products = await prisma.productSeller.findMany({
+        where: { categoryId: id },
+        include: {
+          category: true,
+          subcategory: true,
+          sellerProfile: {
+            select: {
+              id: true,
+              shopName: true,
+              shopDescription: true,
+              shopAddress: true,
+              phoneNumber: true,
+              user: {
+                select: {
+                  id: true,
+                  email: true,
+                  profile: { select: { name: true, image: true } },
+                },
+              },
+            },
+          },
+        },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        orderBy: { createdAt: "desc" },
+      });
+
+      // cek produk yang di-like user
+      const userId = req.user?.id;
+      let likedProductIds = [];
+      if (userId) {
+        const likes = await prisma.productLike.findMany({
+          where: { userId },
+          select: { productId: true },
+        });
+        likedProductIds = likes.map((l) => l.productId);
+      }
+
+      // rapihin output
+      const items = products.map((item) => {
+        const { sellerProfile, ...rest } = item;
+        return {
+          ...rest,
+          isLiked: likedProductIds.includes(item.id),
+          seller: sellerProfile
+            ? {
+                id: sellerProfile.id,
+                shopName: sellerProfile.shopName,
+                shopDescription: sellerProfile.shopDescription,
+                shopAddress: sellerProfile.shopAddress,
+                phoneNumber: sellerProfile.phoneNumber,
+                user: {
+                  id: sellerProfile.user.id,
+                  email: sellerProfile.user.email,
+                  name: sellerProfile.user.profile?.name || null,
+                  image: sellerProfile.user.profile?.image || null,
+                },
+              }
+            : null,
+        };
+      });
+
+      return res.json({
+        message: "Products retrieved by category",
+        category: {
+          id: category.id,
+          name: category.name,
+        },
+        pagination: {
+          page,
+          pageSize,
+          total,
+          totalPages: Math.ceil(total / pageSize),
+        },
+        data: items,
+      });
+    } catch (error) {
+      console.error("Unexpected Error", error);
+      return res.status(500).json({ message: "Unexpected Error", data: null });
+    }
+  }
+);
+
+/**
+ *  Find Products By SubCategory
+ * Get /get/subcategories/by/:id      // id subcategories
+ */
+
+router.get(
+  "/get/subcategories/by/:id",
+  authMiddlewareGetProductsLikes,
+  async (req, res) => {
+    try {
+      const { id } = req.params; // subcategoryId
+      const page = parseInt(req.query.page) || 1;
+      const pageSize = parseInt(req.query.pageSize) || 10;
+
+      if (!id) {
+        return res.status(400).json({ message: "Subcategory ID is required" });
+      }
+
+      // validasi subcategory
+      const subcategory = await prisma.subcategories.findUnique({
+        where: { id },
+        include: { category: true },
+      });
+      if (!subcategory) {
+        return res.status(404).json({ message: "Subcategory Not Found" });
+      }
+
+      // ambil total produk
+      const total = await prisma.productSeller.count({
+        where: { subcategoryId: id },
+      });
+
+      // ambil produk dengan pagination
+      const products = await prisma.productSeller.findMany({
+        where: { subcategoryId: id },
+        include: {
+          category: true,
+          subcategory: true,
+          sellerProfile: {
+            select: {
+              id: true,
+              shopName: true,
+              shopDescription: true,
+              shopAddress: true,
+              phoneNumber: true,
+              user: {
+                select: {
+                  id: true,
+                  email: true,
+                  profile: { select: { name: true, image: true } },
+                },
+              },
+            },
+          },
+        },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        orderBy: { createdAt: "desc" },
+      });
+
+      // cek produk yang di-like user
+      const userId = req.user?.id;
+      let likedProductIds = [];
+      if (userId) {
+        const likes = await prisma.productLike.findMany({
+          where: { userId },
+          select: { productId: true },
+        });
+        likedProductIds = likes.map((l) => l.productId);
+      }
+
+      // rapihin output
+      const items = products.map((item) => {
+        const { sellerProfile, ...rest } = item;
+        return {
+          ...rest,
+          isLiked: likedProductIds.includes(item.id),
+          seller: sellerProfile
+            ? {
+                id: sellerProfile.id,
+                shopName: sellerProfile.shopName,
+                shopDescription: sellerProfile.shopDescription,
+                shopAddress: sellerProfile.shopAddress,
+                phoneNumber: sellerProfile.phoneNumber,
+                user: {
+                  id: sellerProfile.user.id,
+                  email: sellerProfile.user.email,
+                  name: sellerProfile.user.profile?.name || null,
+                  image: sellerProfile.user.profile?.image || null,
+                },
+              }
+            : null,
+        };
+      });
+
+      return res.json({
+        message: "Products retrieved by subcategory",
+        subcategory: {
+          id: subcategory.id,
+          name: subcategory.name,
+          category: subcategory.category,
+        },
+        pagination: {
+          page,
+          pageSize,
+          total,
+          totalPages: Math.ceil(total / pageSize),
+        },
+        data: items,
+      });
+    } catch (error) {
+      console.error("Unexpected Error", error);
       return res.status(500).json({ message: "Unexpected Error", data: null });
     }
   }
