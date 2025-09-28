@@ -180,6 +180,11 @@ router.post("/login", async (req, res) => {
       provider: user.provider,
     });
 
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { status: true }
+    });
+
     return res.json({
       message: "Login successful",
       data: {
@@ -189,6 +194,7 @@ router.post("/login", async (req, res) => {
           email: user.email,
           profile: user.profile,
           role: user.role,
+          status:user.status ? 'active' : 'nonActive'
         },
       },
     });
@@ -336,6 +342,47 @@ router.post("/google/sel", async (req, res) => {
   } catch (err) {
     console.error("Google auth error", err);
     return res.status(401).json({ message: "Invalid Google token" });
+  }
+});
+
+/**
+ * Logout User
+ * POST /auth/logout
+ * body: { userId }
+ * Response: { message }
+ * ✅
+ */
+router.post("/logout", authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Set user status to false (logged out)
+    await prisma.user.update({
+      where: { id: userId },
+      data: { status: false }
+    });
+
+    // Set cart expiry to 3 days from now
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 3);
+
+    await prisma.cart.updateMany({
+      where: { 
+        userId: userId,
+        status: 'active'
+      },
+      data: { 
+        expiresAt: expiresAt
+      }
+    });
+
+    return res.json({
+      message: "Logged out successfully",
+      cartExpiresAt: expiresAt
+    });
+  } catch (error) {
+    console.error("Logout error", error);
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 

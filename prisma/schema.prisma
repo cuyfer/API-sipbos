@@ -16,10 +16,14 @@ model User {
   updatedAt     DateTime       @updatedAt
   provider      String?        @default("manually")
   role          UserRole       @default(buyer)
+  status        Boolean        @default(true)
   buyerProfile  BuyerProfile?
   profile       Profile?
   sellerProfile SellerProfile?
   likes         ProductLike[]
+  orders        Order[]
+  wallet        Wallet?
+  cartItems     Cart[]
 }
 
 model Profile {
@@ -96,6 +100,8 @@ model ProductSeller {
   tags                String[]
   likesCount          Int            @default(0)
   likes               ProductLike[]
+  orderItems          OrderItem[]
+  carts               Cart[]
   averageRating       Float          @default(0)
   ratingCount         Int            @default(0)
   createdAt           DateTime       @default(now())
@@ -124,7 +130,141 @@ model Banner {
   images String[]
 }
 
+// ===== E-COMMERCE MODELS =====
+
+model Order {
+  id              String      @id @default(uuid())
+  orderNumber     String      @unique
+  buyerId         String
+  buyer           User        @relation(fields: [buyerId], references: [id])
+  status          OrderStatus @default(pending)
+  totalAmount     Decimal     @db.Decimal(10, 2)
+  shippingCost    Decimal     @db.Decimal(10, 2) @default(0)
+  discountAmount  Decimal     @db.Decimal(10, 2) @default(0)
+  shippingAddress String
+  notes           String?
+  orderItems      OrderItem[]
+  transactions    Transaction[]
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+}
+
+model OrderItem {
+  id          String        @id @default(uuid())
+  orderId     String
+  order       Order         @relation(fields: [orderId], references: [id])
+  productId   String
+  product     ProductSeller @relation(fields: [productId], references: [id])
+  quantity    Int
+  unitPrice   Decimal       @db.Decimal(10, 2)
+  totalPrice  Decimal       @db.Decimal(10, 2)
+  createdAt   DateTime      @default(now())
+}
+
+model Transaction {
+  id                String            @id @default(uuid())
+  orderId           String
+  order             Order             @relation(fields: [orderId], references: [id])
+  externalId        String?           @unique // ID dari payment gateway (Xendit)
+  paymentMethod     PaymentMethod
+  status            TransactionStatus @default(pending)
+  amount            Decimal           @db.Decimal(10, 2)
+  fee               Decimal           @db.Decimal(10, 2) @default(0)
+  gatewayResponse   Json?             // Response dari payment gateway
+  paidAt            DateTime?
+  expiredAt         DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+}
+
+model Wallet {
+  id                String              @id @default(uuid())
+  userId            String              @unique
+  user              User                @relation(fields: [userId], references: [id])
+  balance           Decimal             @db.Decimal(10, 2) @default(0)
+  isActive          Boolean             @default(true)
+  walletTransactions WalletTransaction[]
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+}
+
+model WalletTransaction {
+  id                String            @id @default(uuid())
+  walletId          String
+  wallet            Wallet            @relation(fields: [walletId], references: [id])
+  type              WalletTransactionType
+  amount            Decimal           @db.Decimal(10, 2)
+  balanceBefore     Decimal           @db.Decimal(10, 2)
+  balanceAfter      Decimal           @db.Decimal(10, 2)
+  description       String?
+  referenceId       String?           // ID order atau transaction yang terkait
+  createdAt         DateTime          @default(now())
+}
+
+// ===== ENUMS =====
+
+
+
 enum UserRole {
   buyer
   seller
+}
+
+enum OrderStatus {
+  pending
+  confirmed
+  processing
+  shipped
+  delivered
+  cancelled
+  refunded
+}
+
+enum PaymentMethod {
+  wallet
+  bank_transfer
+  credit_card
+  e_wallet
+  qris
+}
+
+enum TransactionStatus {
+  pending
+  paid
+  failed
+  expired
+  cancelled
+  refunded
+}
+
+enum WalletTransactionType {
+  credit
+  debit
+  refund
+  withdrawal
+  deposit
+}
+
+// ===== CART MODELS =====
+
+model Cart {
+  id         String      @id @default(uuid())
+  userId     String
+  user       User        @relation(fields: [userId], references: [id])
+  productId  String
+  product    ProductSeller @relation(fields: [productId], references: [id])
+  quantity   Int
+  status     CartStatus  @default(active)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  expiresAt  DateTime?
+
+  @@index([userId])
+  @@index([productId])
+}
+
+enum CartStatus {
+  active
+  expired
+  checked_out
 }

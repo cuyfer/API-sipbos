@@ -9,6 +9,8 @@ const authRoutes = require("../src/routes/auth.routes");
 const productRoutes = require("../src/routes/product.routes");
 const eventRoutes = require("../src/routes/event.routes");
 const userProfile = require("../src/routes/user.routes");
+const paymentRoutes = require("../src/routes/payment.routes");
+const cartRoutes = require("../src/routes/cart.routes");
 // const serverless = require("serverless-http");
 
 // middleware
@@ -32,6 +34,10 @@ app.use("/v1", eventRoutes);
 
 //userProfile
 app.use("/v1", userProfile);
+
+// Payment & Cart
+app.use("/v1", paymentRoutes);
+app.use("/v1", cartRoutes);
 
 app.listen(port, () => {});
 

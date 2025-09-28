@@ -1460,6 +1460,7 @@ router.get(
         category: {
           id: category.id,
           name: category.name,
+          categories: category,
         },
         pagination: {
           page,

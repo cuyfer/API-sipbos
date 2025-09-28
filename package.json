@@ -28,6 +28,7 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
     "node-appwrite": "^18.0.0",
+    "node-fetch": "^2.7.0",
     "ora": "^8.2.0",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
